@@ -80,7 +80,7 @@ Te avisa si un streamer actualiza el título antes o durante el directo.
 ### Opción A — Desde el código fuente
 
 ```bash
-git clone https://github.com/TU_USUARIO/superfav-extension.git
+git clone https://github.com/zLeGnDz3r0/superfav-extension.git
 cd superfav-extension
 npm install
 npm run build
