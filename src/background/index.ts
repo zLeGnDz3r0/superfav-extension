@@ -150,13 +150,30 @@ async function ensureOffscreenDocument(): Promise<void> {
   });
 }
 
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Play the chosen toast sound for any desktop notification (live or title). */
 async function playNotificationSound(soundId: NotifSoundId): Promise<void> {
   const file = soundFileFor(soundId);
   if (!file) return;
 
   try {
     await ensureOffscreenDocument();
-    await chrome.runtime.sendMessage({ type: 'superfav-play-sound', file });
+
+    // Offscreen may need a moment after createDocument before listeners exist.
+    let lastError: unknown;
+    for (let attempt = 0; attempt < 6; attempt++) {
+      try {
+        await chrome.runtime.sendMessage({ type: 'superfav-play-sound', file });
+        return;
+      } catch (err) {
+        lastError = err;
+        await delay(40 * (attempt + 1));
+      }
+    }
+    void lastError;
   } catch {
     // Audio is best-effort; never block the toast.
   }
@@ -169,6 +186,9 @@ async function showNotification(
   message: string,
   soundId: NotifSoundId,
 ): Promise<void> {
+  // Start sound for every toast (directo + título); await so playback begins reliably.
+  const soundPromise = playNotificationSound(soundId);
+
   await chrome.notifications.create(notifId, {
     type: 'basic',
     iconUrl: 'icons/icon128.png',
@@ -179,7 +199,7 @@ async function showNotification(
     silent: true,
   });
 
-  void playNotificationSound(soundId);
+  await soundPromise;
 
   const map = await getNotifMap();
   map[notifId] = login;
