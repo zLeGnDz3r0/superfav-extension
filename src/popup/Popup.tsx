@@ -13,6 +13,11 @@ import {
   type ChannelNotifPref,
   type NotificationSettings,
 } from '../lib/notificationSettings';
+import {
+  SOUND_OPTIONS,
+  soundFileFor,
+  type NotifSoundId,
+} from '../lib/notifSounds';
 
 declare const __API_BASE__: string;
 const API_BASE = __API_BASE__;
@@ -360,8 +365,12 @@ export default function Popup() {
             <ChannelSettingsView
               favs={sortedFavs}
               channelPrefs={channelPrefs}
+              soundId={notifSettings.soundId}
               hint={prefHint}
               onToggle={toggleChannelPref}
+              onSoundChange={(soundId) =>
+                persistNotifSettings({ ...notifSettings, soundId })
+              }
             />
           ) : (
             <>
@@ -417,85 +426,222 @@ export default function Popup() {
 function ChannelSettingsView({
   favs,
   channelPrefs,
+  soundId,
   hint,
   onToggle,
+  onSoundChange,
 }: {
   favs: string[];
   channelPrefs: ChannelNotifMap;
+  soundId: NotifSoundId;
   hint: string | null;
   onToggle: (login: string, key: keyof ChannelNotifPref) => void;
+  onSoundChange: (id: NotifSoundId) => void;
 }) {
-  if (favs.length === 0) {
-    return (
-      <div className="flex h-[260px] flex-col items-center justify-center px-6 text-center">
-        <span className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-white/[0.04] text-sf-muted/50">
-          <Diamond className="h-7 w-7" />
-        </span>
-        <h2 className="mb-1 text-base font-semibold">Aún no tienes SuperFavs</h2>
-        <p className="text-sm text-sf-muted">
-          Márcalos en Twitch con el diamante y podrás gestionar sus avisos aquí.
-        </p>
-      </div>
-    );
-  }
+  const [soundOpen, setSoundOpen] = useState(true);
+  const [favsOpen, setFavsOpen] = useState(true);
+
+  const previewSound = useCallback((id: NotifSoundId) => {
+    const file = soundFileFor(id);
+    if (!file) return;
+    const audio = new Audio(chrome.runtime.getURL(file));
+    void audio.play().catch(() => {});
+  }, []);
+
+  const selectedLabel =
+    SOUND_OPTIONS.find((o) => o.id === soundId)?.label ?? 'Sonido';
 
   return (
-    <div className="flex flex-col gap-2">
-      <div className="px-0.5 pb-1">
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-sf-muted">
-          Mis SuperFavs
-        </p>
-        <p className="mt-0.5 text-[11px] text-sf-muted/80">
-          Desactiva avisos por canal. Los generales de arriba deben estar activos.
-        </p>
+    <div className="flex flex-col gap-3">
+      <div className="rounded-xl bg-sf-surface px-3 py-2">
+        <button
+          type="button"
+          onClick={() => setSoundOpen((o) => !o)}
+          aria-expanded={soundOpen}
+          className="flex w-full items-center gap-2 py-0.5 text-left"
+        >
+          <ChevronIcon open={soundOpen} className="h-3.5 w-3.5 shrink-0 text-sf-muted" />
+          <div className="min-w-0 flex-1">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-sf-muted">
+              Sonido del aviso
+            </p>
+            {!soundOpen && (
+              <p className="mt-0.5 truncate text-[11px] text-sf-muted/80">{selectedLabel}</p>
+            )}
+          </div>
+        </button>
+
+        {soundOpen && (
+          <>
+            <p className="mt-1.5 mb-2 text-[11px] text-sf-muted/80">
+              Se reproduce al lanzar el toast (~3 s). Pulsa ▶ para probar.
+            </p>
+            <div className="flex flex-col gap-1 pb-0.5">
+              {SOUND_OPTIONS.map((opt) => {
+                const selected = soundId === opt.id;
+                return (
+                  <div
+                    key={opt.id}
+                    className={`flex items-center gap-2 rounded-lg px-2 py-1.5 transition-colors ${
+                      selected ? 'bg-sf-accent/15' : 'hover:bg-white/[0.04]'
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => onSoundChange(opt.id)}
+                      className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                      aria-pressed={selected}
+                    >
+                      <span
+                        className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border ${
+                          selected
+                            ? 'border-sf-accent bg-sf-accent'
+                            : 'border-white/25 bg-transparent'
+                        }`}
+                        aria-hidden
+                      >
+                        {selected && <span className="h-1.5 w-1.5 rounded-full bg-white" />}
+                      </span>
+                      <span
+                        className={`truncate text-xs font-medium ${
+                          selected ? 'text-sf-text' : 'text-sf-muted'
+                        }`}
+                      >
+                        {opt.label}
+                      </span>
+                    </button>
+                    {opt.file && (
+                      <button
+                        type="button"
+                        onClick={() => previewSound(opt.id)}
+                        aria-label={`Probar ${opt.label}`}
+                        title="Probar"
+                        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-sf-muted transition-colors hover:bg-white/[0.08] hover:text-sf-text"
+                      >
+                        <PlayIcon className="h-3 w-3" />
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
       </div>
 
-      {hint && (
-        <div
-          role="alert"
-          className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] leading-snug text-amber-100"
-        >
-          {hint}
+      {favs.length === 0 ? (
+        <div className="flex h-[180px] flex-col items-center justify-center px-6 text-center">
+          <span className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-white/[0.04] text-sf-muted/50">
+            <Diamond className="h-7 w-7" />
+          </span>
+          <h2 className="mb-1 text-base font-semibold">Aún no tienes SuperFavs</h2>
+          <p className="text-sm text-sf-muted">
+            Márcalos en Twitch con el diamante y podrás gestionar sus avisos aquí.
+          </p>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-2">
+          <div className="rounded-xl bg-sf-surface px-3 py-2">
+            <button
+              type="button"
+              onClick={() => setFavsOpen((o) => !o)}
+              aria-expanded={favsOpen}
+              className="flex w-full items-center gap-2 py-0.5 text-left"
+            >
+              <ChevronIcon open={favsOpen} className="h-3.5 w-3.5 shrink-0 text-sf-muted" />
+              <div className="min-w-0 flex-1">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-sf-muted">
+                  Mis SuperFavs
+                </p>
+                {!favsOpen && (
+                  <p className="mt-0.5 text-[11px] text-sf-muted/80">
+                    {favs.length} canal{favs.length === 1 ? '' : 'es'}
+                  </p>
+                )}
+              </div>
+            </button>
+            {favsOpen && (
+              <p className="mt-1.5 text-[11px] text-sf-muted/80">
+                Desactiva avisos por canal. Los generales de arriba deben estar activos.
+              </p>
+            )}
+          </div>
+
+          {favsOpen && (
+            <>
+              {hint && (
+                <div
+                  role="alert"
+                  className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] leading-snug text-amber-100"
+                >
+                  {hint}
+                </div>
+              )}
+
+              <ul className="flex flex-col gap-2">
+                {favs.map((login) => {
+                  const pref = getChannelPref(channelPrefs, login);
+                  return (
+                    <li key={login} className="rounded-xl bg-sf-surface px-3 py-2.5">
+                      <div className="mb-2 flex items-center gap-2">
+                        <span className="flex h-6 w-6 items-center justify-center rounded-md bg-sf-accent/15 text-sf-accent">
+                          <Diamond className="h-3.5 w-3.5" />
+                        </span>
+                        <span className="truncate text-sm font-semibold">{login}</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-3 pl-8">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[11px] text-sf-muted">Directo</span>
+                          <MiniToggle
+                            checked={pref.live}
+                            ariaLabel={`Avisar de directo de ${login}`}
+                            onChange={() => onToggle(login, 'live')}
+                          />
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[11px] text-sf-muted">Título</span>
+                          <MiniToggle
+                            checked={pref.title}
+                            ariaLabel={`Avisar de título de ${login}`}
+                            onChange={() => onToggle(login, 'title')}
+                          />
+                        </div>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </>
+          )}
         </div>
       )}
-
-      <ul className="flex flex-col gap-2">
-        {favs.map((login) => {
-          const pref = getChannelPref(channelPrefs, login);
-          return (
-            <li
-              key={login}
-              className="rounded-xl bg-sf-surface px-3 py-2.5"
-            >
-              <div className="mb-2 flex items-center gap-2">
-                <span className="flex h-6 w-6 items-center justify-center rounded-md bg-sf-accent/15 text-sf-accent">
-                  <Diamond className="h-3.5 w-3.5" />
-                </span>
-                <span className="truncate text-sm font-semibold">{login}</span>
-              </div>
-              <div className="flex items-center justify-between gap-3 pl-8">
-                <div className="flex items-center gap-2">
-                  <span className="text-[11px] text-sf-muted">Directo</span>
-                  <MiniToggle
-                    checked={pref.live}
-                    ariaLabel={`Avisar de directo de ${login}`}
-                    onChange={() => onToggle(login, 'live')}
-                  />
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-[11px] text-sf-muted">Título</span>
-                  <MiniToggle
-                    checked={pref.title}
-                    ariaLabel={`Avisar de título de ${login}`}
-                    onChange={() => onToggle(login, 'title')}
-                  />
-                </div>
-              </div>
-            </li>
-          );
-        })}
-      </ul>
     </div>
+  );
+}
+
+function ChevronIcon({ open, className }: { open: boolean; className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      style={{ transform: open ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform .15s ease' }}
+    >
+      <path d="m9 18 6-6-6-6" />
+    </svg>
+  );
+}
+
+function PlayIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="currentColor" aria-hidden="true">
+      <path d="M8 5.14v13.72a1 1 0 0 0 1.5.86l11-6.86a1 1 0 0 0 0-1.72l-11-6.86A1 1 0 0 0 8 5.14Z" />
+    </svg>
   );
 }
 

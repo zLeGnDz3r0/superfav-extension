@@ -13,6 +13,7 @@ import {
   type ChannelNotifMap,
   type NotificationSettings,
 } from '../lib/notificationSettings';
+import { soundFileFor, type NotifSoundId } from '../lib/notifSounds';
 
 const FAVS_KEY = 'superfavs';
 const LIVE_KEY = 'live_logins';
@@ -128,11 +129,45 @@ async function cleanupNotification(notifId: string): Promise<void> {
   }
 }
 
+async function ensureOffscreenDocument(): Promise<void> {
+  const offscreen = chrome.offscreen as typeof chrome.offscreen & {
+    hasDocument?: () => Promise<boolean>;
+  };
+
+  if (typeof offscreen.hasDocument === 'function') {
+    if (await offscreen.hasDocument()) return;
+  } else {
+    const contexts = (await chrome.runtime.getContexts({
+      contextTypes: ['OFFSCREEN_DOCUMENT' as chrome.runtime.ContextType],
+    })) as chrome.runtime.ExtensionContext[];
+    if (contexts.length > 0) return;
+  }
+
+  await offscreen.createDocument({
+    url: 'offscreen.html',
+    reasons: ['AUDIO_PLAYBACK' as chrome.offscreen.Reason],
+    justification: 'Reproduce el sonido personalizado del aviso de SuperFav',
+  });
+}
+
+async function playNotificationSound(soundId: NotifSoundId): Promise<void> {
+  const file = soundFileFor(soundId);
+  if (!file) return;
+
+  try {
+    await ensureOffscreenDocument();
+    await chrome.runtime.sendMessage({ type: 'superfav-play-sound', file });
+  } catch {
+    // Audio is best-effort; never block the toast.
+  }
+}
+
 async function showNotification(
   notifId: string,
   login: string,
   title: string,
   message: string,
+  soundId: NotifSoundId,
 ): Promise<void> {
   await chrome.notifications.create(notifId, {
     type: 'basic',
@@ -141,7 +176,10 @@ async function showNotification(
     message,
     priority: 2,
     requireInteraction: true,
+    silent: true,
   });
+
+  void playNotificationSound(soundId);
 
   const map = await getNotifMap();
   map[notifId] = login;
@@ -168,6 +206,7 @@ async function notifyLive(stream: LiveStream): Promise<void> {
     login,
     `${stream.user_name} está en directo`,
     message,
+    settings.soundId,
   );
 }
 
@@ -188,6 +227,7 @@ async function notifyTitleChange(channel: ChannelInfo): Promise<void> {
     login,
     `${channel.user_name} cambió el título`,
     message,
+    settings.soundId,
   );
 }
 

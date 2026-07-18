@@ -1,9 +1,16 @@
+import {
+  DEFAULT_SOUND_ID,
+  normalizeSoundId,
+  type NotifSoundId,
+} from './notifSounds';
+
 export const NOTIF_SETTINGS_KEY = 'superfav_notif_settings';
 export const CHANNEL_NOTIF_KEY = 'superfav_channel_notif';
 
 export type NotificationSettings = {
   desktopEnabled: boolean;
   titleChangeEnabled: boolean;
+  soundId: NotifSoundId;
 };
 
 export type ChannelNotifPref = {
@@ -16,6 +23,7 @@ export type ChannelNotifMap = Record<string, ChannelNotifPref>;
 export const DEFAULT_NOTIF_SETTINGS: NotificationSettings = {
   desktopEnabled: true,
   titleChangeEnabled: true,
+  soundId: DEFAULT_SOUND_ID,
 };
 
 export const DEFAULT_CHANNEL_PREF: ChannelNotifPref = {
@@ -38,6 +46,7 @@ export function normalizeNotificationSettings(
   return {
     desktopEnabled: raw?.desktopEnabled ?? DEFAULT_NOTIF_SETTINGS.desktopEnabled,
     titleChangeEnabled: raw?.titleChangeEnabled ?? DEFAULT_NOTIF_SETTINGS.titleChangeEnabled,
+    soundId: normalizeSoundId(raw?.soundId),
   };
 }
 
