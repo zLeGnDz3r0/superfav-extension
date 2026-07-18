@@ -65,7 +65,7 @@ Te avisa si un streamer actualiza el título antes o durante el directo.
 | | Feature | Descripción |
 |---|---------|-------------|
 | 💎 | **Un clic para marcar** | Pulsa el diamante en cualquier canal de Twitch para añadirlo a tus SuperFavs. |
-| 🔴 | **Badge de directos** | Contador rojo en el icono: cuántos SuperFavs están en directo. Se actualiza **cada minuto**. |
+| 🔴 | **Badge de directos** | Contador rojo en el icono: cuántos SuperFavs están en directo. Se actualiza **cada 3 minutos**. |
 | 🖥️ | **Avisos en el escritorio** | Notificación del sistema cuando un favorito empieza a emitir. Dura ~3 min y puedes cerrarla. |
 | 📋 | **Cambio de título** | Detecta cuando un streamer cambia el título — ideal para saber cuándo va a empezar. |
 | 📊 | **Popup al instante** | Quién emite, espectadores, categoría y miniatura en un solo vistazo. |

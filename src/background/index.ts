@@ -15,11 +15,14 @@ const TITLES_KEY = 'channel_titles';
 const NOTIF_MAP_KEY = 'notif_login_map';
 const LIVE_INIT_KEY = 'live_logins_initialized';
 const TITLES_INIT_KEY = 'channel_titles_initialized';
-const REFRESH_ALARM = 'refresh';
+const LEGACY_REFRESH_ALARM = 'refresh';
+const LIVE_POLL_ALARM = 'live-poll';
+const TITLE_POLL_ALARM = 'title-poll';
 const CLOSE_ALARM_PREFIX = 'close:';
 const LIVE_NOTIF_PREFIX = 'live:';
 const TITLE_NOTIF_PREFIX = 'title:';
 const CLOSE_AFTER_MS = 3 * 60 * 1000;
+const TITLE_POLL_MS = 30 * 1000;
 
 interface LiveStream {
   user_login: string;
@@ -37,6 +40,17 @@ interface ChannelInfo {
 
 type NotifLoginMap = Record<string, string>;
 type TitleMap = Record<string, string>;
+
+let pollInFlight = false;
+
+function normalizeTitle(title: string): string {
+  return title.trim();
+}
+
+function titlesDiffer(oldTitle: string | undefined, newTitle: string): boolean {
+  if (oldTitle === undefined) return false;
+  return normalizeTitle(oldTitle) !== normalizeTitle(newTitle);
+}
 
 function liveNotifId(login: string): string {
   return `${LIVE_NOTIF_PREFIX}${login}`;
@@ -59,6 +73,11 @@ function loginFromNotifId(id: string): string | null {
 function notifIdFromCloseAlarm(name: string): string | null {
   if (!name.startsWith(CLOSE_ALARM_PREFIX)) return null;
   return name.slice(CLOSE_ALARM_PREFIX.length);
+}
+
+async function getFavs(): Promise<string[]> {
+  const result = await chrome.storage.sync.get([FAVS_KEY]);
+  return result[FAVS_KEY] ?? [];
 }
 
 async function getNotifMap(): Promise<NotifLoginMap> {
@@ -161,26 +180,49 @@ async function pollStreams(favs: string[]): Promise<void> {
   const data = await res.json();
   const streams: LiveStream[] = data.data ?? [];
   const currentLogins = new Set(streams.map((s) => s.user_login.toLowerCase()));
+  const favSet = new Set(favs.map((f) => f.toLowerCase()));
 
-  const local = await chrome.storage.local.get([LIVE_KEY, LIVE_INIT_KEY]);
+  const local = await chrome.storage.local.get([LIVE_KEY, LIVE_INIT_KEY, TITLES_KEY]);
   const previousLogins = new Set<string>(
     ((local[LIVE_KEY] as string[] | undefined) ?? []).map((l) => l.toLowerCase()),
   );
+  const previousTitles = (local[TITLES_KEY] as TitleMap | undefined) ?? {};
   const initialized = local[LIVE_INIT_KEY] === true;
+  const titleUpdates: TitleMap = { ...previousTitles };
 
   if (initialized) {
     for (const stream of streams) {
       const login = stream.user_login.toLowerCase();
       if (!previousLogins.has(login)) {
         await notifyLive(stream);
+
+        if (titlesDiffer(previousTitles[login], stream.title ?? '')) {
+          await notifyTitleChange({
+            user_login: login,
+            user_name: stream.user_name,
+            title: stream.title ?? '',
+            game_name: stream.game_name,
+          });
+        }
+
+        titleUpdates[login] = stream.title ?? '';
       }
     }
+  } else {
+    for (const stream of streams) {
+      titleUpdates[stream.user_login.toLowerCase()] = stream.title ?? '';
+    }
+  }
+
+  for (const login of Object.keys(titleUpdates)) {
+    if (!favSet.has(login)) delete titleUpdates[login];
   }
 
   await updateBadge(streams.length);
   await chrome.storage.local.set({
     [LIVE_KEY]: [...currentLogins],
     [LIVE_INIT_KEY]: true,
+    [TITLES_KEY]: titleUpdates,
   });
 }
 
@@ -190,18 +232,23 @@ async function pollTitles(favs: string[]): Promise<void> {
 
   const data = await res.json();
   const channels: ChannelInfo[] = data.data ?? [];
+  const favSet = new Set(favs.map((f) => f.toLowerCase()));
 
   const local = await chrome.storage.local.get([TITLES_KEY, TITLES_INIT_KEY]);
   const previousTitles = (local[TITLES_KEY] as TitleMap | undefined) ?? {};
   const initialized = local[TITLES_INIT_KEY] === true;
-  const nextTitles: TitleMap = {};
+  const nextTitles: TitleMap = { ...previousTitles };
+
+  for (const login of Object.keys(nextTitles)) {
+    if (!favSet.has(login)) delete nextTitles[login];
+  }
 
   for (const channel of channels) {
     const login = channel.user_login.toLowerCase();
     const newTitle = channel.title ?? '';
     const oldTitle = previousTitles[login];
 
-    if (initialized && oldTitle !== undefined && oldTitle !== newTitle) {
+    if (initialized && titlesDiffer(oldTitle, newTitle)) {
       await notifyTitleChange(channel);
     }
 
@@ -214,10 +261,52 @@ async function pollTitles(favs: string[]): Promise<void> {
   });
 }
 
-async function poll(): Promise<void> {
+async function pollLiveOnly(): Promise<void> {
+  if (pollInFlight) return;
+  pollInFlight = true;
   try {
-    const result = await chrome.storage.sync.get([FAVS_KEY]);
-    const favs: string[] = result[FAVS_KEY] ?? [];
+    const favs = await getFavs();
+    if (favs.length === 0) {
+      await updateBadge(0);
+      await chrome.storage.local.set({
+        [LIVE_KEY]: [],
+        [LIVE_INIT_KEY]: true,
+      });
+      return;
+    }
+    await pollStreams(favs);
+  } catch {
+    // Sin red: conservar estado previo.
+  } finally {
+    pollInFlight = false;
+  }
+}
+
+async function pollTitlesOnly(): Promise<void> {
+  if (pollInFlight) return;
+  pollInFlight = true;
+  try {
+    const favs = await getFavs();
+    if (favs.length === 0) {
+      await chrome.storage.local.set({
+        [TITLES_KEY]: {},
+        [TITLES_INIT_KEY]: true,
+      });
+      return;
+    }
+    await pollTitles(favs);
+  } catch {
+    // Sin red: conservar estado previo.
+  } finally {
+    pollInFlight = false;
+  }
+}
+
+async function poll(): Promise<void> {
+  if (pollInFlight) return;
+  pollInFlight = true;
+  try {
+    const favs = await getFavs();
 
     if (favs.length === 0) {
       await updateBadge(0);
@@ -234,26 +323,43 @@ async function poll(): Promise<void> {
     await pollTitles(favs);
   } catch {
     // Sin red: conservar estado previo.
+  } finally {
+    pollInFlight = false;
   }
 }
 
-function scheduleRefreshAlarm(): void {
-  void chrome.alarms.create(REFRESH_ALARM, { periodInMinutes: 1 });
+function scheduleTitlePoll(): void {
+  void chrome.alarms.create(TITLE_POLL_ALARM, {
+    when: Date.now() + TITLE_POLL_MS,
+  });
+}
+
+async function schedulePollAlarms(): Promise<void> {
+  await chrome.alarms.clear(LEGACY_REFRESH_ALARM);
+  await chrome.alarms.clear(LIVE_POLL_ALARM);
+  await chrome.alarms.clear(TITLE_POLL_ALARM);
+  await chrome.alarms.create(LIVE_POLL_ALARM, { periodInMinutes: 3 });
+  scheduleTitlePoll();
 }
 
 chrome.runtime.onInstalled.addListener(() => {
-  scheduleRefreshAlarm();
+  void schedulePollAlarms();
   void poll();
 });
 
 chrome.runtime.onStartup.addListener(() => {
-  scheduleRefreshAlarm();
+  void schedulePollAlarms();
   void poll();
 });
 
 chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === REFRESH_ALARM) {
-    void poll();
+  if (alarm.name === LIVE_POLL_ALARM) {
+    void pollLiveOnly();
+    return;
+  }
+  if (alarm.name === TITLE_POLL_ALARM) {
+    void pollTitlesOnly();
+    scheduleTitlePoll();
     return;
   }
   const notifId = notifIdFromCloseAlarm(alarm.name);
