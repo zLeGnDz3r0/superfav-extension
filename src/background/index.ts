@@ -4,8 +4,13 @@
 declare const __API_BASE__: string;
 
 import {
+  CHANNEL_NOTIF_KEY,
   NOTIF_SETTINGS_KEY,
+  getChannelPref,
+  normalizeChannelPrefs,
   normalizeNotificationSettings,
+  pruneChannelPrefs,
+  type ChannelNotifMap,
   type NotificationSettings,
 } from '../lib/notificationSettings';
 
@@ -96,6 +101,23 @@ async function getNotifSettings(): Promise<NotificationSettings> {
   );
 }
 
+async function getChannelNotifMap(): Promise<ChannelNotifMap> {
+  const result = await chrome.storage.sync.get([CHANNEL_NOTIF_KEY]);
+  return normalizeChannelPrefs(result[CHANNEL_NOTIF_KEY] as ChannelNotifMap | undefined);
+}
+
+async function pruneChannelNotifPrefs(favs: string[]): Promise<void> {
+  const map = await getChannelNotifMap();
+  const pruned = pruneChannelPrefs(map, favs);
+  if (Object.keys(pruned).length === Object.keys(map).length) {
+    const same = Object.keys(pruned).every(
+      (k) => pruned[k]?.live === map[k]?.live && pruned[k]?.title === map[k]?.title,
+    );
+    if (same) return;
+  }
+  await chrome.storage.sync.set({ [CHANNEL_NOTIF_KEY]: pruned });
+}
+
 async function cleanupNotification(notifId: string): Promise<void> {
   await chrome.notifications.clear(notifId);
   await chrome.alarms.clear(closeAlarmName(notifId));
@@ -135,6 +157,9 @@ async function notifyLive(stream: LiveStream): Promise<void> {
   if (!settings.desktopEnabled) return;
 
   const login = stream.user_login.toLowerCase();
+  const channelPrefs = await getChannelNotifMap();
+  if (!getChannelPref(channelPrefs, login).live) return;
+
   const game = stream.game_name || 'Sin categoría';
   const message = stream.title ? `${game} · ${stream.title}` : game;
 
@@ -151,6 +176,9 @@ async function notifyTitleChange(channel: ChannelInfo): Promise<void> {
   if (!settings.titleChangeEnabled) return;
 
   const login = channel.user_login.toLowerCase();
+  const channelPrefs = await getChannelNotifMap();
+  if (!getChannelPref(channelPrefs, login).title) return;
+
   const titleText = channel.title.trim() || '(sin título)';
   const game = channel.game_name || 'Sin categoría';
   const message = `${game} · ${titleText}`;
@@ -367,7 +395,10 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 });
 
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'sync' && changes[FAVS_KEY]) void poll();
+  if (area !== 'sync' || !changes[FAVS_KEY]) return;
+  const nextFavs = (changes[FAVS_KEY].newValue as string[] | undefined) ?? [];
+  void pruneChannelNotifPrefs(nextFavs);
+  void poll();
 });
 
 chrome.notifications.onClicked.addListener((notificationId) => {

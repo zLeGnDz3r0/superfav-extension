@@ -10,11 +10,30 @@ html,
 body,
 #root {
   margin: 0;
+  background: #0e0e10;
 }
 
 body {
   font-family: 'Inter', Roobert, 'Helvetica Neue', Helvetica, Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+/* Borde degradado del popup (sustituye el marco blanco plano) */
+.sf-popup-shell {
+  padding: 1.5px;
+  background: linear-gradient(
+    135deg,
+    #9146ff 0%,
+    #bf94ff 35%,
+    #772ce8 65%,
+    #9146ff 100%
+  );
+}
+
+.sf-popup-inner {
+  background: #0e0e10;
+  overflow: hidden;
 }
 
 /* Entrada escalonada de las tarjetas */
