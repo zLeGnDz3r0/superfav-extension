@@ -13,7 +13,15 @@ import {
   type ChannelNotifMap,
   type NotificationSettings,
 } from '../lib/notificationSettings';
+import { LOCALE_KEY, loadStoredLocale, t, type LocaleId } from '../lib/i18n';
 import { soundFileFor, type NotifSoundId } from '../lib/notifSounds';
+
+let cachedLocale: LocaleId = 'es';
+
+async function refreshLocale(): Promise<LocaleId> {
+  cachedLocale = await loadStoredLocale();
+  return cachedLocale;
+}
 
 const FAVS_KEY = 'superfavs';
 const LIVE_KEY = 'live_logins';
@@ -218,13 +226,14 @@ async function notifyLive(stream: LiveStream): Promise<void> {
   const channelPrefs = await getChannelNotifMap();
   if (!getChannelPref(channelPrefs, login).live) return;
 
-  const game = stream.game_name || 'Sin categoría';
+  const locale = await refreshLocale();
+  const game = stream.game_name || t(locale, 'noCategory');
   const message = stream.title ? `${game} · ${stream.title}` : game;
 
   await showNotification(
     liveNotifId(login),
     login,
-    `${stream.user_name} está en directo`,
+    t(locale, 'notifLive', { name: stream.user_name }),
     message,
     settings.soundId,
   );
@@ -238,14 +247,15 @@ async function notifyTitleChange(channel: ChannelInfo): Promise<void> {
   const channelPrefs = await getChannelNotifMap();
   if (!getChannelPref(channelPrefs, login).title) return;
 
-  const titleText = channel.title.trim() || '(sin título)';
-  const game = channel.game_name || 'Sin categoría';
+  const locale = await refreshLocale();
+  const titleText = channel.title.trim() || t(locale, 'noTitle');
+  const game = channel.game_name || t(locale, 'noCategory');
   const message = `${game} · ${titleText}`;
 
   await showNotification(
     titleNotifId(login),
     login,
-    `${channel.user_name} cambió el título`,
+    t(locale, 'notifTitleChange', { name: channel.user_name }),
     message,
     settings.soundId,
   );
@@ -431,11 +441,13 @@ async function schedulePollAlarms(): Promise<void> {
 }
 
 chrome.runtime.onInstalled.addListener(() => {
+  void refreshLocale();
   void schedulePollAlarms();
   void poll();
 });
 
 chrome.runtime.onStartup.addListener(() => {
+  void refreshLocale();
   void schedulePollAlarms();
   void poll();
 });
@@ -455,7 +467,11 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 });
 
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area !== 'sync' || !changes[FAVS_KEY]) return;
+  if (area !== 'sync') return;
+  if (changes[LOCALE_KEY]) {
+    void refreshLocale();
+  }
+  if (!changes[FAVS_KEY]) return;
   const nextFavs = (changes[FAVS_KEY].newValue as string[] | undefined) ?? [];
   void pruneChannelNotifPrefs(nextFavs);
   void poll();

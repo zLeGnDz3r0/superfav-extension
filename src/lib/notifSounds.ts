@@ -7,16 +7,15 @@ export type NotifSoundId =
 
 export type SoundOption = {
   id: NotifSoundId;
-  label: string;
   file: string | null;
 };
 
 export const SOUND_OPTIONS: SoundOption[] = [
-  { id: 'none', label: 'Sin sonido', file: null },
-  { id: 'cricket', label: 'Cricri', file: 'sounds/cricket.wav' },
-  { id: 'beep', label: 'Pitido', file: 'sounds/beep.wav' },
-  { id: 'meow', label: 'Miau', file: 'sounds/meow.wav' },
-  { id: 'alert', label: 'Alert', file: 'sounds/alert.wav' },
+  { id: 'none', file: null },
+  { id: 'cricket', file: 'sounds/cricket.wav' },
+  { id: 'beep', file: 'sounds/beep.wav' },
+  { id: 'meow', file: 'sounds/meow.wav' },
+  { id: 'alert', file: 'sounds/alert.wav' },
 ];
 
 export const DEFAULT_SOUND_ID: NotifSoundId = 'alert';

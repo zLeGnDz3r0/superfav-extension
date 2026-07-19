@@ -8,9 +8,13 @@
 // de Twitch, que no carga nuestra hoja de estilos, así que estilamos con CSS
 // real inyectado una sola vez (ver injectStyles).
 
+import { LOCALE_KEY, loadStoredLocale, normalizeLocale, t, type LocaleId } from '../lib/i18n';
+
 const BTN_ID = 'superfav-injected-btn';
 const STYLE_ID = 'superfav-styles';
 const STORAGE_KEY = 'superfavs';
+
+let locale: LocaleId = 'es';
 
 // Rutas cuyo primer segmento NO es un canal.
 const RESERVED = new Set([
@@ -120,7 +124,7 @@ function updateVisual(): void {
     btn.dataset.active = String(active);
     btn.innerHTML = (active ? ICON_FILLED : ICON_OUTLINE) + '<span>Super Fav</span>';
   }
-  const label = active ? 'Quitar de SuperFav' : 'Añadir a SuperFav';
+  const label = active ? t(locale, 'removeSuperFav') : t(locale, 'addSuperFav');
   btn.title = label;
   btn.setAttribute('aria-label', label);
   btn.setAttribute('aria-pressed', String(active));
@@ -194,16 +198,24 @@ function init(): void {
   observer.observe(document.body, { childList: true, subtree: true });
 
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === 'sync' && changes[STORAGE_KEY]) {
+    if (area !== 'sync') return;
+    if (changes[STORAGE_KEY]) {
       favs = (changes[STORAGE_KEY].newValue as string[] | undefined) ?? [];
+      updateVisual();
+    }
+    if (changes[LOCALE_KEY]) {
+      locale = normalizeLocale(changes[LOCALE_KEY].newValue);
       updateVisual();
     }
   });
 
-  chrome.storage.sync.get([STORAGE_KEY], (res) => {
-    favs = (res[STORAGE_KEY] as string[] | undefined) ?? [];
-    ready = true;
-    refresh();
+  void loadStoredLocale().then((loc) => {
+    locale = loc;
+    chrome.storage.sync.get([STORAGE_KEY], (res) => {
+      favs = (res[STORAGE_KEY] as string[] | undefined) ?? [];
+      ready = true;
+      refresh();
+    });
   });
 }
 

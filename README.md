@@ -11,14 +11,14 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Chrome-MV3-4285F4?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Chrome MV3" />
-  <img src="https://img.shields.io/badge/version-1.1.0-9146FF?style=for-the-badge" alt="v1.1.0" />
+  <img src="https://img.shields.io/badge/version-1.1.2-9146FF?style=for-the-badge" alt="v1.1.2" />
   <img src="https://img.shields.io/badge/Gratis-100%25-success?style=for-the-badge" alt="Gratis" />
 </p>
 
 <p align="center">
   🌐 <a href="https://superfavtwitch.onrender.com/">Web oficial</a>
   ·
-  📦 <a href="https://github.com/zLeGnDz3r0/superfav-extension/releases/latest">Descargar release</a>
+  🏪 <a href="https://chromewebstore.google.com/detail/kgnhcepaobaiklnggoebppljgobkpckc">Chrome Web Store</a>
 </p>
 
 ---
@@ -45,7 +45,7 @@ Lista ordenada por espectadores, borde degradado y avisos globales siempre visib
 
 ### ⚙️ Avisos por SuperFav
 
-Desde el engranaje silencia **Directo** o **Título** canal a canal.
+Desde el engranaje silencia **Directo** o **Título** canal a canal, elige el **idioma** y el **sonido** del aviso.
 
 <p align="center">
   <img src="docs/capture-settings.png" alt="Ajustes de avisos por SuperFav" width="720" />
@@ -79,15 +79,21 @@ Te avisa si un streamer actualiza el título (revisión cada ~30 s).
 | 📋 | **Cambio de título** | Detecta cambios de título **cada 30 segundos**. |
 | 📊 | **Popup al instante** | Quién emite, espectadores, categoría y miniatura. |
 | ⚙️ | **Avisos por canal** | Engranaje → activa/silencia Directo y Título por SuperFav. |
+| 🌍 | **Multi-idioma** | ES, EN, CA, FR, IT, DE, TR, HI, ZH, JA desde el engranaje. |
 | 🎚️ | **Toggles globales** | Siempre visibles; los individuales solo restringen más. |
 | 🌓 | **Tema claro y oscuro** | El diamante se adapta al tema de Twitch. |
 | 🔐 | **Local y seguro** | Favoritos en `chrome.storage`. Sin datos personales en servidores propios. |
 
 ---
 
-## 🛠️ Instalación (modo desarrollador)
+## 🛠️ Instalación
 
-### Opción A — Desde el código fuente
+### Opción A — Chrome Web Store (recomendada)
+
+1. Abre [SuperFav for Twitch en Chrome Web Store](https://chromewebstore.google.com/detail/kgnhcepaobaiklnggoebppljgobkpckc)
+2. Pulsa **Añadir a Chrome**
+
+### Opción B — Desde el código fuente (desarrolladores)
 
 ```bash
 git clone https://github.com/zLeGnDz3r0/superfav-extension.git
@@ -100,26 +106,32 @@ npm run build
 2. Activa **Modo desarrollador**
 3. **Cargar descomprimida** → selecciona la carpeta `dist/`
 
-### Opción B — Desde un Release
+### Opción C — Desde un Release
 
-1. Ve a **[Releases](https://github.com/zLeGnDz3r0/superfav-extension/releases)** y descarga el `.rar` / ZIP
+1. Ve a **[Releases](https://github.com/zLeGnDz3r0/superfav-extension/releases)** y descarga el ZIP
 2. Descomprímelo
 3. En `chrome://extensions` → **Cargar descomprimida** → carpeta descomprimida
-
-> 🏪 **Próximamente en Chrome Web Store** — instalación en un clic para todos.
 
 ---
 
 ## 🧭 Cómo usarla
 
-1. **Instala** la extensión en Chrome, Edge o Brave
+1. **Instala** la extensión desde la Chrome Web Store
 2. **Visita** un canal de Twitch y pulsa el **diamante** 💎
 3. **Consulta** el badge 🔴, abre el **popup** o deja activos los **avisos de escritorio**
-4. **Ajusta** los toggles globales; con el **engranaje** ⚙️ afina avisos por cada SuperFav
+4. **Ajusta** idioma, sonido y avisos desde el **engranaje** ⚙️
 
 ---
 
 ## 📋 Historial de versiones
+
+### v1.1.2 — 19 jul 2026
+- Selector de idioma en el engranaje (10 idiomas)
+- Publicada en Chrome Web Store
+
+### v1.1.1 — 18 jul 2026
+- Sonido personalizable del toast (Cricri, Pitido, Miau, Alert o silencio)
+- Vista previa del sonido
 
 ### v1.1.0 — 18 jul 2026
 - Avisos individuales por SuperFav (engranaje)

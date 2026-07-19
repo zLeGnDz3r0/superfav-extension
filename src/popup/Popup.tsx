@@ -1,6 +1,15 @@
 // src/popup/Popup.tsx
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  LOCALE_KEY,
+  LOCALE_OPTIONS,
+  loadStoredLocale,
+  saveLocale,
+  soundLabelKey,
+  t,
+  type LocaleId,
+} from '../lib/i18n';
+import {
   CHANNEL_NOTIF_KEY,
   DEFAULT_NOTIF_SETTINGS,
   NOTIF_SETTINGS_KEY,
@@ -172,6 +181,30 @@ export default function Popup() {
   const [channelPrefs, setChannelPrefs] = useState<ChannelNotifMap>({});
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [prefHint, setPrefHint] = useState<string | null>(null);
+  const [locale, setLocale] = useState<LocaleId>('es');
+
+  useEffect(() => {
+    void loadStoredLocale().then(setLocale);
+  }, []);
+
+  useEffect(() => {
+    const onStorageChange = (
+      changes: Record<string, chrome.storage.StorageChange>,
+      areaName: string,
+    ) => {
+      if (areaName !== 'sync' || !changes[LOCALE_KEY]) return;
+      const next = changes[LOCALE_KEY].newValue;
+      if (typeof next === 'string') setLocale(next as LocaleId);
+    };
+    chrome.storage.onChanged.addListener(onStorageChange);
+    return () => chrome.storage.onChanged.removeListener(onStorageChange);
+  }, []);
+
+  const handleLocaleChange = useCallback((next: LocaleId) => {
+    setLocale(next);
+    void saveLocale(next);
+    setPrefHint(null);
+  }, []);
 
   const load = useCallback(() => {
     setStatus('loading');
@@ -242,26 +275,18 @@ export default function Popup() {
 
         if (key === 'live' && globalLiveOff) {
           if (globalLiveOff && globalTitleOff) {
-            setPrefHint(
-              'Los avisos generales están desactivados. Activa “Avisar en el escritorio (directo)” arriba para poder habilitar avisos individuales de directo.',
-            );
+            setPrefHint(t(locale, 'hintLiveGlobalOff'));
           } else {
-            setPrefHint(
-              'Activa primero el aviso general de directo para poder habilitarlo en este canal.',
-            );
+            setPrefHint(t(locale, 'hintLiveNeedGlobal'));
           }
           return;
         }
 
         if (key === 'title' && globalTitleOff) {
           if (globalLiveOff && globalTitleOff) {
-            setPrefHint(
-              'Los avisos generales están desactivados. Activa “Avisar si cambia el título” arriba para poder habilitar avisos individuales de título.',
-            );
+            setPrefHint(t(locale, 'hintTitleGlobalOff'));
           } else {
-            setPrefHint(
-              'Activa primero el aviso general de título para poder habilitarlo en este canal.',
-            );
+            setPrefHint(t(locale, 'hintTitleNeedGlobal'));
           }
           return;
         }
@@ -271,7 +296,7 @@ export default function Popup() {
       const nextPref: ChannelNotifPref = { ...current, [key]: !current[key] };
       persistChannelPrefs(setChannelPrefInMap(channelPrefs, login, nextPref));
     },
-    [channelPrefs, notifSettings, persistChannelPrefs],
+    [channelPrefs, locale, notifSettings, persistChannelPrefs],
   );
 
   const openStream = (login: string) => {
@@ -299,9 +324,9 @@ export default function Popup() {
                 setSettingsOpen((open) => !open);
                 setPrefHint(null);
               }}
-              aria-label={settingsOpen ? 'Volver a directos' : 'Gestionar avisos por SuperFav'}
+              aria-label={settingsOpen ? t(locale, 'gearBack') : t(locale, 'gearManage')}
               aria-expanded={settingsOpen}
-              title="Gestionar SuperFavs"
+              title={t(locale, 'gearTitle')}
               className={`flex h-7 w-7 items-center justify-center rounded-lg transition-colors ${
                 settingsOpen
                   ? 'bg-sf-accent/20 text-sf-accent'
@@ -315,8 +340,8 @@ export default function Popup() {
                 type="button"
                 onClick={load}
                 disabled={status === 'loading'}
-                aria-label="Actualizar directos"
-                title="Actualizar"
+                aria-label={t(locale, 'refresh')}
+                title={t(locale, 'refreshTitle')}
                 className="flex h-7 w-7 items-center justify-center rounded-lg text-sf-muted transition-colors hover:bg-white/[0.06] hover:text-sf-text disabled:cursor-not-allowed disabled:opacity-40"
               >
                 <RefreshIcon
@@ -327,7 +352,7 @@ export default function Popup() {
             {!settingsOpen && status === 'ready' && streams.length > 0 && (
               <span className="flex items-center gap-1.5 rounded-full bg-white/[0.06] px-2 py-1 text-xs font-medium text-sf-muted">
                 <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-red-500" />
-                {streams.length} en directo
+                {t(locale, 'liveCount', { n: streams.length })}
               </span>
             )}
           </div>
@@ -336,9 +361,9 @@ export default function Popup() {
         <section className="space-y-1.5 border-b border-white/[0.06] px-3 py-2">
           <ToggleRow
             id="desktop-notif-toggle"
-            label="Avisar en el escritorio (directo)"
+            label={t(locale, 'desktopToggle')}
             checked={notifSettings.desktopEnabled}
-            ariaLabel="Avisar en el escritorio cuando hay directo"
+            ariaLabel={t(locale, 'desktopToggleAria')}
             onChange={() =>
               persistNotifSettings({
                 ...notifSettings,
@@ -348,9 +373,9 @@ export default function Popup() {
           />
           <ToggleRow
             id="title-change-toggle"
-            label="Avisar si cambia el título"
+            label={t(locale, 'titleToggle')}
             checked={notifSettings.titleChangeEnabled}
-            ariaLabel="Avisar si cambia el título del canal"
+            ariaLabel={t(locale, 'titleToggleAria')}
             onChange={() =>
               persistNotifSettings({
                 ...notifSettings,
@@ -363,20 +388,24 @@ export default function Popup() {
         <main className="sf-scroll max-h-[460px] min-h-[260px] overflow-y-auto p-3">
           {settingsOpen ? (
             <ChannelSettingsView
+              locale={locale}
               favs={sortedFavs}
               channelPrefs={channelPrefs}
               soundId={notifSettings.soundId}
               hint={prefHint}
               onToggle={toggleChannelPref}
+              onLocaleChange={handleLocaleChange}
               onSoundChange={(soundId) =>
                 persistNotifSettings({ ...notifSettings, soundId })
               }
             />
           ) : (
             <>
-              {status === 'loading' && <Preloader />}
-              {status === 'error' && <ErrorState onRetry={load} />}
-              {status === 'ready' && streams.length === 0 && <EmptyState hasFavs={hasFavs} />}
+              {status === 'loading' && <Preloader locale={locale} />}
+              {status === 'error' && <ErrorState locale={locale} onRetry={load} />}
+              {status === 'ready' && streams.length === 0 && (
+                <EmptyState locale={locale} hasFavs={hasFavs} />
+              )}
               {status === 'ready' && streams.length > 0 && (
                 <ul className="flex flex-col gap-2">
                   {streams.map((s, i) => (
@@ -402,7 +431,7 @@ export default function Popup() {
                         <div className="min-w-0 flex-1">
                           <h3 className="truncate text-sm font-semibold">{s.user_name}</h3>
                           <p className="truncate text-xs text-sf-accent">
-                            {s.game_name || 'Sin categoría'}
+                            {s.game_name || t(locale, 'noCategory')}
                           </p>
                           <p className="truncate text-xs text-sf-muted">{s.title}</p>
                         </div>
@@ -424,18 +453,22 @@ export default function Popup() {
 }
 
 function ChannelSettingsView({
+  locale,
   favs,
   channelPrefs,
   soundId,
   hint,
   onToggle,
+  onLocaleChange,
   onSoundChange,
 }: {
+  locale: LocaleId;
   favs: string[];
   channelPrefs: ChannelNotifMap;
   soundId: NotifSoundId;
   hint: string | null;
   onToggle: (login: string, key: keyof ChannelNotifPref) => void;
+  onLocaleChange: (locale: LocaleId) => void;
   onSoundChange: (id: NotifSoundId) => void;
 }) {
   const [soundOpen, setSoundOpen] = useState(true);
@@ -448,11 +481,27 @@ function ChannelSettingsView({
     void audio.play().catch(() => {});
   }, []);
 
-  const selectedLabel =
-    SOUND_OPTIONS.find((o) => o.id === soundId)?.label ?? 'Sonido';
+  const selectedLabel = t(locale, soundLabelKey(soundId));
 
   return (
     <div className="flex flex-col gap-3">
+      <div className="rounded-xl bg-sf-surface px-3 py-2">
+        <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-sf-muted">
+          {t(locale, 'language')}
+        </label>
+        <select
+          value={locale}
+          onChange={(e) => onLocaleChange(e.target.value as LocaleId)}
+          className="w-full rounded-lg border border-white/[0.08] bg-sf-bg px-2.5 py-1.5 text-xs text-sf-text outline-none focus:border-sf-accent"
+        >
+          {LOCALE_OPTIONS.map((opt) => (
+            <option key={opt.id} value={opt.id}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+      </div>
+
       <div className="rounded-xl bg-sf-surface px-3 py-2">
         <button
           type="button"
@@ -463,7 +512,7 @@ function ChannelSettingsView({
           <ChevronIcon open={soundOpen} className="h-3.5 w-3.5 shrink-0 text-sf-muted" />
           <div className="min-w-0 flex-1">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-sf-muted">
-              Sonido del aviso
+              {t(locale, 'soundSection')}
             </p>
             {!soundOpen && (
               <p className="mt-0.5 truncate text-[11px] text-sf-muted/80">{selectedLabel}</p>
@@ -474,11 +523,12 @@ function ChannelSettingsView({
         {soundOpen && (
           <>
             <p className="mt-1.5 mb-2 text-[11px] text-sf-muted/80">
-              Se reproduce al lanzar el toast (~3 s). Pulsa ▶ para probar.
+              {t(locale, 'soundHint')}
             </p>
             <div className="flex flex-col gap-1 pb-0.5">
               {SOUND_OPTIONS.map((opt) => {
                 const selected = soundId === opt.id;
+                const soundLabel = t(locale, soundLabelKey(opt.id));
                 return (
                   <div
                     key={opt.id}
@@ -507,15 +557,15 @@ function ChannelSettingsView({
                           selected ? 'text-sf-text' : 'text-sf-muted'
                         }`}
                       >
-                        {opt.label}
+                        {soundLabel}
                       </span>
                     </button>
                     {opt.file && (
                       <button
                         type="button"
                         onClick={() => previewSound(opt.id)}
-                        aria-label={`Probar ${opt.label}`}
-                        title="Probar"
+                        aria-label={t(locale, 'previewSound', { name: soundLabel })}
+                        title={t(locale, 'previewTitle')}
                         className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-sf-muted transition-colors hover:bg-white/[0.08] hover:text-sf-text"
                       >
                         <PlayIcon className="h-3 w-3" />
@@ -534,10 +584,8 @@ function ChannelSettingsView({
           <span className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-white/[0.04] text-sf-muted/50">
             <Diamond className="h-7 w-7" />
           </span>
-          <h2 className="mb-1 text-base font-semibold">Aún no tienes SuperFavs</h2>
-          <p className="text-sm text-sf-muted">
-            Márcalos en Twitch con el diamante y podrás gestionar sus avisos aquí.
-          </p>
+          <h2 className="mb-1 text-base font-semibold">{t(locale, 'noSuperFavsTitle')}</h2>
+          <p className="text-sm text-sf-muted">{t(locale, 'noSuperFavsSettingsDesc')}</p>
         </div>
       ) : (
         <div className="flex flex-col gap-2">
@@ -551,18 +599,20 @@ function ChannelSettingsView({
               <ChevronIcon open={favsOpen} className="h-3.5 w-3.5 shrink-0 text-sf-muted" />
               <div className="min-w-0 flex-1">
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-sf-muted">
-                  Mis SuperFavs
+                  {t(locale, 'mySuperFavs')}
                 </p>
                 {!favsOpen && (
                   <p className="mt-0.5 text-[11px] text-sf-muted/80">
-                    {favs.length} canal{favs.length === 1 ? '' : 'es'}
+                    {favs.length === 1
+                      ? t(locale, 'channelCountOne')
+                      : t(locale, 'channelCountMany', { n: favs.length })}
                   </p>
                 )}
               </div>
             </button>
             {favsOpen && (
               <p className="mt-1.5 text-[11px] text-sf-muted/80">
-                Desactiva avisos por canal. Los generales de arriba deben estar activos.
+                {t(locale, 'channelPrefsHint')}
               </p>
             )}
           </div>
@@ -591,18 +641,18 @@ function ChannelSettingsView({
                       </div>
                       <div className="flex items-center justify-between gap-3 pl-8">
                         <div className="flex items-center gap-2">
-                          <span className="text-[11px] text-sf-muted">Directo</span>
+                          <span className="text-[11px] text-sf-muted">{t(locale, 'liveLabel')}</span>
                           <MiniToggle
                             checked={pref.live}
-                            ariaLabel={`Avisar de directo de ${login}`}
+                            ariaLabel={t(locale, 'liveAria', { name: login })}
                             onChange={() => onToggle(login, 'live')}
                           />
                         </div>
                         <div className="flex items-center gap-2">
-                          <span className="text-[11px] text-sf-muted">Título</span>
+                          <span className="text-[11px] text-sf-muted">{t(locale, 'titleLabel')}</span>
                           <MiniToggle
                             checked={pref.title}
-                            ariaLabel={`Avisar de título de ${login}`}
+                            ariaLabel={t(locale, 'titleAria', { name: login })}
                             onChange={() => onToggle(login, 'title')}
                           />
                         </div>
@@ -645,7 +695,7 @@ function PlayIcon({ className }: { className?: string }) {
   );
 }
 
-function Preloader() {
+function Preloader({ locale }: { locale: LocaleId }) {
   return (
     <div className="flex h-[260px] flex-col items-center justify-center gap-5">
       <div className="relative h-14 w-14">
@@ -654,30 +704,28 @@ function Preloader() {
           <Diamond className="h-6 w-6" />
         </span>
       </div>
-      <p className="text-sm text-sf-muted">Buscando tus directos…</p>
+      <p className="text-sm text-sf-muted">{t(locale, 'searching')}</p>
     </div>
   );
 }
 
-function EmptyState({ hasFavs }: { hasFavs: boolean }) {
+function EmptyState({ locale, hasFavs }: { locale: LocaleId; hasFavs: boolean }) {
   return (
     <div className="flex h-[260px] flex-col items-center justify-center px-6 text-center">
       <span className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-white/[0.04] text-sf-muted/50">
         <Diamond className="h-7 w-7" />
       </span>
       <h2 className="mb-1 text-base font-semibold">
-        {hasFavs ? 'Ningún SuperFav en directo' : 'Aún no tienes SuperFavs'}
+        {hasFavs ? t(locale, 'emptyNoneLive') : t(locale, 'emptyNoFavs')}
       </h2>
       <p className="text-sm text-sf-muted">
-        {hasFavs
-          ? 'Tus streamers favoritos están descansando. Vuelve más tarde.'
-          : 'Marca streamers con el botón de SuperFav en sus canales de Twitch y aparecerán aquí cuando estén en directo.'}
+        {hasFavs ? t(locale, 'emptyNoneLiveDesc') : t(locale, 'emptyNoFavsDesc')}
       </p>
     </div>
   );
 }
 
-function ErrorState({ onRetry }: { onRetry: () => void }) {
+function ErrorState({ locale, onRetry }: { locale: LocaleId; onRetry: () => void }) {
   return (
     <div className="flex h-[260px] flex-col items-center justify-center px-6 text-center">
       <span className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-red-500/10 text-red-400">
@@ -693,15 +741,13 @@ function ErrorState({ onRetry }: { onRetry: () => void }) {
           <path d="M12 9v4M12 17h.01M10.3 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.7 3.86a2 2 0 0 0-3.42 0Z" />
         </svg>
       </span>
-      <h2 className="mb-1 text-base font-semibold">No se pudo conectar</h2>
-      <p className="mb-4 text-sm text-sf-muted">
-        Comprueba que el servidor proxy esté activo e inténtalo de nuevo.
-      </p>
+      <h2 className="mb-1 text-base font-semibold">{t(locale, 'errorTitle')}</h2>
+      <p className="mb-4 text-sm text-sf-muted">{t(locale, 'errorDesc')}</p>
       <button
         onClick={onRetry}
         className="rounded-lg bg-sf-accent px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-sf-accent2"
       >
-        Reintentar
+        {t(locale, 'retry')}
       </button>
     </div>
   );

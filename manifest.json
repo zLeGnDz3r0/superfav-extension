@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "SuperFav for Twitch",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "Marca tus streamers favoritos y míralos en directo desde un dashboard minimalista.",
   "permissions": ["storage", "alarms", "notifications", "offscreen"],
   "background": {
