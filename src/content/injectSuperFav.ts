@@ -11,7 +11,7 @@ import {
   type FavEntry,
 } from '../lib/favorites';
 import { LOCALE_KEY, loadStoredLocale, normalizeLocale, t, type LocaleId } from '../lib/i18n';
-import { ICON_FILLED, ICON_OUTLINE } from './diamondIcons';
+import { ICON_FILLED } from './diamondIcons';
 
 const PLATFORM = 'twitch' as const;
 const BTN_ID = 'superfav-injected-btn';
@@ -36,30 +36,28 @@ function injectStyles(): void {
   if (document.getElementById(STYLE_ID)) return;
   const style = document.createElement('style');
   style.id = STYLE_ID;
+  // White logo always; only background changes (inactive = Twitch purple, active = muted).
   style.textContent = `
 #${BTN_ID}{
   display:inline-flex;align-items:center;justify-content:center;gap:5px;flex-shrink:0;
   align-self:center;
   height:32px;padding:0 10px;margin:0 0 0 6px;
   border:none;border-radius:9999px;cursor:pointer;
-  background:linear-gradient(90deg,#9146FF 0%,#9146FF 50%,#53FC18 50%,#53FC18 100%);
+  background:#9146FF;
   color:#fff;
   font-family:inherit;font-size:13px;font-weight:600;line-height:1;
   overflow:hidden;
-  transition:filter .15s ease,width .15s ease,padding .15s ease,gap .15s ease;
+  transition:filter .15s ease,width .15s ease,padding .15s ease,gap .15s ease,background-color .15s ease;
 }
 #${BTN_ID}:hover{filter:brightness(1.08)}
 #${BTN_ID}:active{transform:scale(.96)}
-#${BTN_ID} svg{width:20px;height:20px;display:block;flex-shrink:0}
-#${BTN_ID} span{white-space:nowrap;overflow:hidden;transition:width .15s ease,opacity .15s ease}
-#${BTN_ID}.is-active{width:52px;padding:0;gap:0;background:#53535F61}
-#${BTN_ID}.is-active svg{transition:opacity .15s ease}
-#${BTN_ID}.is-active:hover svg{opacity:.7}
+#${BTN_ID} svg{width:18px;height:18px;display:block;flex-shrink:0}
+#${BTN_ID} span{white-space:nowrap;overflow:hidden;transition:width .15s ease,opacity .15s ease;color:#fff}
+#${BTN_ID}.is-active{width:52px;padding:0;gap:0;background:#53535F61;filter:none}
+#${BTN_ID}.is-active:hover{filter:brightness(1.08)}
 #${BTN_ID}.is-active span{width:0;opacity:0;font-size:0}
-html.tw-root--theme-dark #${BTN_ID}.is-active{background-color:#53535F61;color:#EFEFF1}
-html.tw-root--theme-dark #${BTN_ID}.is-active:hover{background-color:#53535F61}
-html.tw-root--theme-light #${BTN_ID}.is-active{background-color:rgba(0,0,0,.08);color:#0E0E10}
-html.tw-root--theme-light #${BTN_ID}.is-active:hover{background-color:rgba(0,0,0,.12)}
+html.tw-root--theme-dark #${BTN_ID}.is-active{background-color:#53535F61}
+html.tw-root--theme-light #${BTN_ID}.is-active{background-color:rgba(0,0,0,.14)}
 `;
   (document.head ?? document.documentElement).appendChild(style);
 }
@@ -96,7 +94,8 @@ function createButton(): HTMLButtonElement {
   const btn = document.createElement('button');
   btn.id = BTN_ID;
   btn.type = 'button';
-  btn.innerHTML = ICON_OUTLINE + '<span>Super Fav</span>';
+  // Same white mark always; active state only toggles background via .is-active.
+  btn.innerHTML = ICON_FILLED + '<span>Super Fav</span>';
   btn.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -114,7 +113,7 @@ function updateVisual(): void {
   btn.classList.toggle('is-active', active);
   if (btn.dataset.active !== String(active)) {
     btn.dataset.active = String(active);
-    btn.innerHTML = (active ? ICON_FILLED : ICON_OUTLINE) + '<span>Super Fav</span>';
+    btn.innerHTML = ICON_FILLED + '<span>Super Fav</span>';
   }
   const label = active ? t(locale, 'removeSuperFav') : t(locale, 'addSuperFav');
   btn.title = label;

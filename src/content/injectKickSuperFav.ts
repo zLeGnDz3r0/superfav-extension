@@ -11,7 +11,7 @@ import {
   type FavEntry,
 } from '../lib/favorites';
 import { LOCALE_KEY, loadStoredLocale, normalizeLocale, t, type LocaleId } from '../lib/i18n';
-import { ICON_FILLED, ICON_OUTLINE } from './diamondIcons';
+import { ICON_FILLED } from './diamondIcons';
 
 const PLATFORM = 'kick' as const;
 const BTN_ID = 'superfav-kick-btn';
@@ -29,33 +29,58 @@ const RESERVED = new Set([
 let favs: FavEntry[] = [];
 let ready = false;
 
+/** Kick layout classes matching the native icon-button row (size/shape only). */
+const KICK_NATIVE_BTN_CLASS = [
+  'group',
+  'relative',
+  'box-border',
+  'shrink-0',
+  'grow-0',
+  'select-none',
+  'items-center',
+  'justify-center',
+  'whitespace-nowrap',
+  'rounded',
+  'font-semibold',
+  'ring-0',
+  'transition-all',
+  'focus-visible:outline-none',
+  'active:scale-[0.95]',
+  'size-10',
+  'text-base',
+  'leading-none',
+  'flex',
+].join(' ');
+
 function injectStyles(): void {
   if (document.getElementById(STYLE_ID)) return;
   const style = document.createElement('style');
   style.id = STYLE_ID;
+  // White logo always. Inactive = Kick green; active (favorited) = gray.
   style.textContent = `
 #${BTN_ID}{
-  display:inline-flex;align-items:center;justify-content:center;gap:5px;flex-shrink:0;
-  align-self:center;
-  height:36px;padding:0 12px;margin:0 0 0 8px;
-  border:none;border-radius:8px;cursor:pointer;
-  background:linear-gradient(90deg,#9146FF 0%,#9146FF 50%,#53FC18 50%,#53FC18 100%);
-  color:#0E0E10;
-  font-family:inherit;font-size:13px;font-weight:700;line-height:1;
-  overflow:hidden;
-  transition:filter .15s ease,width .15s ease,padding .15s ease,gap .15s ease;
+  cursor:pointer;
+  border:none;
+  padding:0;
+  width:40px;height:40px;min-width:40px;min-height:40px;
+  display:inline-flex;align-items:center;justify-content:center;
+  flex-shrink:0;
+  background-color:#53FC18;
+  transition:background-color .15s ease,transform .15s ease,filter .15s ease;
 }
-#${BTN_ID}:hover{filter:brightness(1.08)}
-#${BTN_ID}:active{transform:scale(.96)}
-#${BTN_ID} svg{width:20px;height:20px;display:block;flex-shrink:0}
-#${BTN_ID} span{white-space:nowrap;overflow:hidden;transition:width .15s ease,opacity .15s ease;color:#0E0E10}
+#${BTN_ID}:hover{filter:brightness(1.06)}
+#${BTN_ID}:active{transform:scale(.95)}
+#${BTN_ID} svg{
+  width:22px;height:22px;
+  display:block;flex-shrink:0;
+  pointer-events:none;
+  overflow:visible;
+}
 #${BTN_ID}.is-active{
-  width:44px;padding:0;gap:0;
-  background:rgba(83,252,24,.18);
-  color:#53FC18;
+  background-color:#3D4046 !important;
+  filter:none;
 }
-#${BTN_ID}.is-active span{width:0;opacity:0;font-size:0}
-#${BTN_ID}.is-active:hover{filter:brightness(1.12)}
+#${BTN_ID}.is-active:hover{filter:brightness(1.1)}
 `;
   (document.head ?? document.documentElement).appendChild(style);
 }
@@ -73,6 +98,12 @@ function getChannel(): string | null {
 }
 
 function findAnchor(): HTMLElement | null {
+  const byTestId = document.querySelector<HTMLElement>('[data-testid="follow-button"]');
+  if (byTestId) return byTestId;
+
+  const favBtn = document.getElementById('tp_favorites_btn');
+  if (favBtn instanceof HTMLElement) return favBtn;
+
   const buttons = Array.from(document.querySelectorAll<HTMLElement>('button, a'));
   const followLike = buttons.find((el) => {
     const text = (el.textContent ?? '').trim().toLowerCase();
@@ -89,7 +120,6 @@ function findAnchor(): HTMLElement | null {
   });
   if (followLike) return followLike;
 
-  // Fallback: channel action row near the streamer name
   const header = document.querySelector(
     '[class*="channel-info"], [class*="ChannelInfo"], header, main',
   );
@@ -114,16 +144,29 @@ function findGroup(): HTMLElement | null {
 }
 
 function placeButton(btn: HTMLButtonElement, group: HTMLElement): void {
-  if (!group.contains(btn)) {
-    group.appendChild(btn);
+  if (group.contains(btn)) return;
+
+  // Sit with Kick's icon row (bell / heart), before Follow when possible.
+  const favNative = group.querySelector('#tp_favorites_btn');
+  if (favNative?.parentElement === group) {
+    favNative.insertAdjacentElement('afterend', btn);
+    return;
   }
+  const follow = group.querySelector('[data-testid="follow-button"]');
+  if (follow?.parentElement === group) {
+    follow.insertAdjacentElement('beforebegin', btn);
+    return;
+  }
+  group.appendChild(btn);
 }
 
 function createButton(): HTMLButtonElement {
   const btn = document.createElement('button');
   btn.id = BTN_ID;
   btn.type = 'button';
-  btn.innerHTML = ICON_OUTLINE + '<span>Super Fav</span>';
+  btn.className = KICK_NATIVE_BTN_CLASS;
+  // Same white mark always; active state only toggles background via .is-active.
+  btn.innerHTML = ICON_FILLED;
   btn.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -138,10 +181,11 @@ function updateVisual(): void {
   if (!btn) return;
   const channel = btn.dataset.channel ?? '';
   const active = hasFav(favs, PLATFORM, channel);
+  btn.className = KICK_NATIVE_BTN_CLASS;
   btn.classList.toggle('is-active', active);
   if (btn.dataset.active !== String(active)) {
     btn.dataset.active = String(active);
-    btn.innerHTML = (active ? ICON_FILLED : ICON_OUTLINE) + '<span>Super Fav</span>';
+    btn.innerHTML = ICON_FILLED;
   }
   const label = active ? t(locale, 'removeSuperFav') : t(locale, 'addSuperFav');
   btn.title = label;

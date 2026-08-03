@@ -57,31 +57,17 @@ type Status = 'loading' | 'ready' | 'error';
 const formatViewers = (n: number): string =>
   n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}K` : String(n);
 
-function SplitDiamond({ className }: { className?: string }) {
+function BrandMark({ className }: { className?: string }) {
   return (
-    <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
-      <defs>
-        <linearGradient id="sf-popup-split" x1="0" y1="0" x2="1" y2="0">
-          <stop offset="50%" stopColor="#9146FF" />
-          <stop offset="50%" stopColor="#53FC18" />
-        </linearGradient>
-      </defs>
-      <path
-        d="M6 3h12l4 6-10 13L2 9Z"
-        fill="url(#sf-popup-split)"
-      />
-      <g
-        fill="none"
-        stroke="#0E0E10"
-        strokeWidth="1.4"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        opacity="0.35"
-      >
-        <path d="M11 3 8 9l4 13 4-13-3-6" />
-        <path d="M2 9h20" />
-      </g>
-    </svg>
+    <img
+      src={chrome.runtime.getURL('icons/icon128.png')}
+      alt=""
+      className={className}
+      width={24}
+      height={24}
+      draggable={false}
+      aria-hidden
+    />
   );
 }
 
@@ -245,6 +231,7 @@ function thumbSrc(url: string, platform: Platform): string {
   if (platform === 'twitch') {
     return url.replace('{width}', '320').replace('{height}', '180');
   }
+  // Kick URLs are already absolute (often via our /api/kick/thumbnail proxy).
   return url;
 }
 
@@ -411,8 +398,8 @@ export default function Popup() {
       <div className="sf-popup-inner select-none font-sans text-sf-text">
         <header className="flex items-center justify-between border-b border-white/[0.06] px-4 py-3">
           <div className="flex items-center gap-2">
-            <span className="flex h-6 w-6 items-center justify-center rounded-md bg-white/[0.06]">
-              <SplitDiamond className="h-4 w-4" />
+            <span className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-md">
+              <BrandMark className="h-6 w-6 object-contain" />
             </span>
             <h1 className="text-sm font-semibold tracking-tight">
               SuperFav{' '}
@@ -524,12 +511,20 @@ export default function Popup() {
                               alt=""
                               loading="lazy"
                               className="h-full w-full object-cover"
+                              onError={(e) => {
+                                const el = e.currentTarget;
+                                el.style.display = 'none';
+                                const fallback = el.nextElementSibling;
+                                if (fallback instanceof HTMLElement) fallback.hidden = false;
+                              }}
                             />
-                          ) : (
-                            <div className="flex h-full w-full items-center justify-center text-[10px] text-sf-muted">
-                              LIVE
-                            </div>
-                          )}
+                          ) : null}
+                          <div
+                            hidden={Boolean(s.thumbnail_url)}
+                            className="flex h-full w-full items-center justify-center text-[10px] text-sf-muted"
+                          >
+                            LIVE
+                          </div>
                           <span className="absolute left-1 top-1 rounded bg-red-600 px-1 py-px text-[9px] font-bold uppercase leading-none tracking-wide text-white">
                             Live
                           </span>
@@ -697,7 +692,7 @@ function ChannelSettingsView({
       {favs.length === 0 ? (
         <div className="flex h-[180px] flex-col items-center justify-center px-6 text-center">
           <span className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-white/[0.04]">
-            <SplitDiamond className="h-7 w-7" />
+            <BrandMark className="h-7 w-7 object-contain" />
           </span>
           <h2 className="mb-1 text-base font-semibold">{t(locale, 'noSuperFavsTitle')}</h2>
           <p className="text-sm text-sf-muted">{t(locale, 'noSuperFavsSettingsDesc')}</p>
@@ -816,7 +811,7 @@ function Preloader({ locale }: { locale: LocaleId }) {
       <div className="relative h-14 w-14">
         <span className="sf-spinner absolute inset-0 block" />
         <span className="sf-bolt-pulse absolute inset-0 flex items-center justify-center">
-          <SplitDiamond className="h-6 w-6" />
+          <BrandMark className="h-6 w-6 object-contain" />
         </span>
       </div>
       <p className="text-sm text-sf-muted">{t(locale, 'searching')}</p>
@@ -828,7 +823,7 @@ function EmptyState({ locale, hasFavs }: { locale: LocaleId; hasFavs: boolean })
   return (
     <div className="flex h-[260px] flex-col items-center justify-center px-6 text-center">
       <span className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-white/[0.04]">
-        <SplitDiamond className="h-7 w-7" />
+        <BrandMark className="h-7 w-7 object-contain" />
       </span>
       <h2 className="mb-1 text-base font-semibold">
         {hasFavs ? t(locale, 'emptyNoneLive') : t(locale, 'emptyNoFavs')}
