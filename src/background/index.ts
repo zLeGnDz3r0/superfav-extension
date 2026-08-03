@@ -271,14 +271,32 @@ async function updateBadge(count: number): Promise<void> {
   }
 }
 
+/** Sync badge + local live list from a definitive set of live SuperFav logins. */
+async function syncLiveState(liveLogins: string[]): Promise<void> {
+  const normalized = [
+    ...new Set(
+      liveLogins
+        .map((l) => l.trim().toLowerCase())
+        .filter((l) => l.length > 0),
+    ),
+  ];
+  await updateBadge(normalized.length);
+  await chrome.storage.local.set({
+    [LIVE_KEY]: normalized,
+    [LIVE_INIT_KEY]: true,
+  });
+}
+
 async function pollStreams(favs: string[]): Promise<void> {
   const res = await fetch(`${__API_BASE__}/api/streams?users=${favs.join(',')}`);
   if (!res.ok) return;
 
   const data = await res.json();
-  const streams: LiveStream[] = data.data ?? [];
-  const currentLogins = new Set(streams.map((s) => s.user_login.toLowerCase()));
   const favSet = new Set(favs.map((f) => f.toLowerCase()));
+  const streams: LiveStream[] = ((data.data ?? []) as LiveStream[]).filter((s) =>
+    favSet.has(s.user_login.toLowerCase()),
+  );
+  const currentLogins = new Set(streams.map((s) => s.user_login.toLowerCase()));
 
   const local = await chrome.storage.local.get([LIVE_KEY, LIVE_INIT_KEY, TITLES_KEY]);
   const previousLogins = new Set<string>(
@@ -316,10 +334,8 @@ async function pollStreams(favs: string[]): Promise<void> {
     if (!favSet.has(login)) delete titleUpdates[login];
   }
 
-  await updateBadge(streams.length);
+  await syncLiveState([...currentLogins]);
   await chrome.storage.local.set({
-    [LIVE_KEY]: [...currentLogins],
-    [LIVE_INIT_KEY]: true,
     [TITLES_KEY]: titleUpdates,
   });
 }
@@ -365,11 +381,7 @@ async function pollLiveOnly(): Promise<void> {
   try {
     const favs = await getFavs();
     if (favs.length === 0) {
-      await updateBadge(0);
-      await chrome.storage.local.set({
-        [LIVE_KEY]: [],
-        [LIVE_INIT_KEY]: true,
-      });
+      await syncLiveState([]);
       return;
     }
     await pollStreams(favs);
@@ -407,10 +419,8 @@ async function poll(): Promise<void> {
     const favs = await getFavs();
 
     if (favs.length === 0) {
-      await updateBadge(0);
+      await syncLiveState([]);
       await chrome.storage.local.set({
-        [LIVE_KEY]: [],
-        [LIVE_INIT_KEY]: true,
         [TITLES_KEY]: {},
         [TITLES_INIT_KEY]: true,
       });
@@ -464,6 +474,19 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   }
   const notifId = notifIdFromCloseAlarm(alarm.name);
   if (notifId) void cleanupNotification(notifId);
+});
+
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (!message || typeof message !== 'object') return false;
+  if ((message as { type?: string }).type !== 'superfav-sync-live') return false;
+
+  const raw = (message as { logins?: unknown }).logins;
+  const logins = Array.isArray(raw)
+    ? raw.filter((l): l is string => typeof l === 'string')
+    : [];
+
+  void syncLiveState(logins).then(() => sendResponse({ ok: true }));
+  return true;
 });
 
 chrome.storage.onChanged.addListener((changes, area) => {

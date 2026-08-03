@@ -206,6 +206,12 @@ export default function Popup() {
     setPrefHint(null);
   }, []);
 
+  const syncLiveBadge = useCallback((logins: string[]) => {
+    void chrome.runtime
+      .sendMessage({ type: 'superfav-sync-live', logins })
+      .catch(() => {});
+  }, []);
+
   const load = useCallback(() => {
     setStatus('loading');
     chrome.storage.sync.get(['superfavs'], async (result) => {
@@ -215,22 +221,25 @@ export default function Popup() {
       if (nextFavs.length === 0) {
         setStreams([]);
         setStatus('ready');
+        syncLiveBadge([]);
         return;
       }
       try {
         const res = await fetch(`${API_BASE}/api/streams?users=${nextFavs.join(',')}`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
-        const live: Stream[] = (data.data ?? []).sort(
-          (a: Stream, b: Stream) => b.viewer_count - a.viewer_count,
-        );
+        const favSet = new Set(nextFavs.map((f) => f.toLowerCase()));
+        const live: Stream[] = ((data.data ?? []) as Stream[])
+          .filter((s) => favSet.has(s.user_login.toLowerCase()))
+          .sort((a, b) => b.viewer_count - a.viewer_count);
         setStreams(live);
         setStatus('ready');
+        syncLiveBadge(live.map((s) => s.user_login.toLowerCase()));
       } catch {
         setStatus('error');
       }
     });
-  }, []);
+  }, [syncLiveBadge]);
 
   useEffect(() => {
     load();

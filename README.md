@@ -11,7 +11,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Chrome-MV3-4285F4?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Chrome MV3" />
-  <img src="https://img.shields.io/badge/version-1.1.2-9146FF?style=for-the-badge" alt="v1.1.2" />
+  <img src="https://img.shields.io/badge/version-1.1.3-9146FF?style=for-the-badge" alt="v1.1.3" />
   <img src="https://img.shields.io/badge/Gratis-100%25-success?style=for-the-badge" alt="Gratis" />
 </p>
 
@@ -124,6 +124,9 @@ npm run build
 ---
 
 ## 📋 Historial de versiones
+
+### v1.1.3 — 3 ago 2026
+- El badge de directos se sincroniza al abrir o refrescar el popup (ya no se queda “pegado” tras un offline)
 
 ### v1.1.2 — 19 jul 2026
 - Selector de idioma en el engranaje (10 idiomas)
