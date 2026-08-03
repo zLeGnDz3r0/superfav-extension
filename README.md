@@ -74,7 +74,7 @@ Te avisa si un streamer actualiza el título (revisión cada ~30 s).
 | | Feature | Descripción |
 |---|---------|-------------|
 | 💎 | **Un clic para marcar** | Pulsa el diamante en cualquier canal de Twitch para añadirlo a tus SuperFavs. |
-| 🔴 | **Badge de directos** | Contador rojo en el icono. Se actualiza **cada 3 minutos**. |
+| 🔴 | **Badge de directos** | Contador rojo en el icono. Poll cada **3 minutos**; se sincroniza al abrir el popup. |
 | 🖥️ | **Avisos en el escritorio** | Notificación del sistema cuando un favorito empieza a emitir. Dura ~3 min. |
 | 📋 | **Cambio de título** | Detecta cambios de título **cada 30 segundos**. |
 | 📊 | **Popup al instante** | Quién emite, espectadores, categoría y miniatura. |
@@ -126,7 +126,8 @@ npm run build
 ## 📋 Historial de versiones
 
 ### v1.1.3 — 3 ago 2026
-- El badge de directos se sincroniza al abrir o refrescar el popup (ya no se queda “pegado” tras un offline)
+- **Corrección del badge:** si un SuperFav se desconectaba, el número rojo del icono podía quedarse desactualizado hasta el siguiente poll (~3 min).
+- Al **abrir o refrescar el popup**, el badge se sincroniza al instante con quién está realmente en directo.
 
 ### v1.1.2 — 19 jul 2026
 - Selector de idioma en el engranaje (10 idiomas)
