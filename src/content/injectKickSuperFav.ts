@@ -1,6 +1,6 @@
-// src/content/injectSuperFav.ts
-// SuperFav — Twitch content script.
-// Tailwind NO se aplica aquí: CSS inyectado vía injectStyles().
+// src/content/injectKickSuperFav.ts
+// SuperFav — Kick content script.
+// Kick SPA: MutationObserver + History patch. Anchor near Follow / Subscribe.
 
 import {
   FAVS_KEY,
@@ -13,21 +13,18 @@ import {
 import { LOCALE_KEY, loadStoredLocale, normalizeLocale, t, type LocaleId } from '../lib/i18n';
 import { ICON_FILLED, ICON_OUTLINE } from './diamondIcons';
 
-const PLATFORM = 'twitch' as const;
-const BTN_ID = 'superfav-injected-btn';
-const STYLE_ID = 'superfav-styles';
+const PLATFORM = 'kick' as const;
+const BTN_ID = 'superfav-kick-btn';
+const STYLE_ID = 'superfav-kick-styles';
 
 let locale: LocaleId = 'es';
 
 const RESERVED = new Set([
-  'directory', 'videos', 'settings', 'subscriptions', 'wallet', 'inventory',
-  'drops', 'friends', 'u', 'p', 'search', 'following', 'prime', 'turbo',
-  'downloads', 'jobs', 'about', 'store', 'bits', 'team', 'teams', 'event',
-  'popout', 'moderator', 'payments', 'security', 'collections',
+  'categories', 'category', 'search', 'dashboard', 'settings', 'messages',
+  'following', 'browse', 'clips', 'videos', 'community', 'transactions',
+  'subscriptions', 'wallet', 'about', 'terms', 'privacy', 'help', 'login',
+  'signup', 'register', 'auth', 'api', 'popout', 'embed',
 ]);
-
-const ANCHOR_SELECTOR =
-  '[data-a-target="follow-button"],[data-a-target="unfollow-button"],[data-a-target="subscribe-button"]';
 
 let favs: FavEntry[] = [];
 let ready = false;
@@ -40,26 +37,25 @@ function injectStyles(): void {
 #${BTN_ID}{
   display:inline-flex;align-items:center;justify-content:center;gap:5px;flex-shrink:0;
   align-self:center;
-  height:32px;padding:0 10px;margin:0 0 0 6px;
-  border:none;border-radius:9999px;cursor:pointer;
+  height:36px;padding:0 12px;margin:0 0 0 8px;
+  border:none;border-radius:8px;cursor:pointer;
   background:linear-gradient(90deg,#9146FF 0%,#9146FF 50%,#53FC18 50%,#53FC18 100%);
-  color:#fff;
-  font-family:inherit;font-size:13px;font-weight:600;line-height:1;
+  color:#0E0E10;
+  font-family:inherit;font-size:13px;font-weight:700;line-height:1;
   overflow:hidden;
   transition:filter .15s ease,width .15s ease,padding .15s ease,gap .15s ease;
 }
 #${BTN_ID}:hover{filter:brightness(1.08)}
 #${BTN_ID}:active{transform:scale(.96)}
 #${BTN_ID} svg{width:20px;height:20px;display:block;flex-shrink:0}
-#${BTN_ID} span{white-space:nowrap;overflow:hidden;transition:width .15s ease,opacity .15s ease}
-#${BTN_ID}.is-active{width:52px;padding:0;gap:0;background:#53535F61}
-#${BTN_ID}.is-active svg{transition:opacity .15s ease}
-#${BTN_ID}.is-active:hover svg{opacity:.7}
+#${BTN_ID} span{white-space:nowrap;overflow:hidden;transition:width .15s ease,opacity .15s ease;color:#0E0E10}
+#${BTN_ID}.is-active{
+  width:44px;padding:0;gap:0;
+  background:rgba(83,252,24,.18);
+  color:#53FC18;
+}
 #${BTN_ID}.is-active span{width:0;opacity:0;font-size:0}
-html.tw-root--theme-dark #${BTN_ID}.is-active{background-color:#53535F61;color:#EFEFF1}
-html.tw-root--theme-dark #${BTN_ID}.is-active:hover{background-color:#53535F61}
-html.tw-root--theme-light #${BTN_ID}.is-active{background-color:rgba(0,0,0,.08);color:#0E0E10}
-html.tw-root--theme-light #${BTN_ID}.is-active:hover{background-color:rgba(0,0,0,.12)}
+#${BTN_ID}.is-active:hover{filter:brightness(1.12)}
 `;
   (document.head ?? document.documentElement).appendChild(style);
 }
@@ -69,25 +65,56 @@ function getChannel(): string | null {
   if (segments.length === 0) return null;
   const name = segments[0].toLowerCase();
   if (RESERVED.has(name)) return null;
+  // Skip nested routes that aren't the channel root (e.g. /user/videos)
+  if (segments.length > 1 && ['videos', 'clips', 'chat', 'about', 'schedule'].includes(segments[1])) {
+    // Still a channel page — keep slug
+  }
   return name;
 }
 
+function findAnchor(): HTMLElement | null {
+  const buttons = Array.from(document.querySelectorAll<HTMLElement>('button, a'));
+  const followLike = buttons.find((el) => {
+    const text = (el.textContent ?? '').trim().toLowerCase();
+    return (
+      text === 'follow' ||
+      text === 'following' ||
+      text === 'unfollow' ||
+      text === 'seguir' ||
+      text === 'siguiendo' ||
+      text === 'subscribe' ||
+      text === 'suscribirse' ||
+      text === 'subscribed'
+    );
+  });
+  if (followLike) return followLike;
+
+  // Fallback: channel action row near the streamer name
+  const header = document.querySelector(
+    '[class*="channel-info"], [class*="ChannelInfo"], header, main',
+  );
+  return (header as HTMLElement | null) ?? null;
+}
+
 function findGroup(): HTMLElement | null {
-  const anchor = document.querySelector(ANCHOR_SELECTOR);
+  const anchor = findAnchor();
   if (!anchor) return null;
   let el: HTMLElement | null = anchor.parentElement;
-  for (let i = 0; i < 4 && el; i++) {
-    if (el.childElementCount >= 2) return el;
+  for (let i = 0; i < 6 && el; i++) {
+    const style = getComputedStyle(el);
+    if (
+      (style.display.includes('flex') || style.display === 'grid') &&
+      el.childElementCount >= 1
+    ) {
+      return el;
+    }
     el = el.parentElement;
   }
   return anchor.parentElement;
 }
 
 function placeButton(btn: HTMLButtonElement, group: HTMLElement): void {
-  const parent = group.parentElement;
-  if (parent && getComputedStyle(parent).display.includes('flex')) {
-    group.insertAdjacentElement('afterend', btn);
-  } else {
+  if (!group.contains(btn)) {
     group.appendChild(btn);
   }
 }
@@ -151,6 +178,8 @@ function refresh(): void {
   if (!btn) {
     btn = createButton();
     placeButton(btn, group);
+  } else if (!group.contains(btn)) {
+    placeButton(btn, group);
   }
 
   btn.dataset.channel = channel;
@@ -191,7 +220,7 @@ function init(): void {
   window.addEventListener('popstate', onMaybeUrlChange);
 
   const observer = new MutationObserver(schedule);
-  observer.observe(document.body, { childList: true, subtree: true });
+  observer.observe(document.documentElement, { childList: true, subtree: true });
 
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'sync') return;

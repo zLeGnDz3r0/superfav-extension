@@ -10,6 +10,8 @@ export default {
           surface2: '#26262C',
           accent: '#9146FF',
           accent2: '#A970FF',
+          twitch: '#9146FF',
+          kick: '#53FC18',
           text: '#EFEFF1',
           muted: '#ADADB8',
         },

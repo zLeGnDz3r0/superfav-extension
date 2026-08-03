@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "SuperFav for Twitch",
-  "version": "1.1.3",
-  "description": "Marca tus streamers favoritos y míralos en directo desde un dashboard minimalista.",
+  "name": "SuperFav",
+  "version": "1.2.0",
+  "description": "Marca tus streamers favoritos en Twitch y Kick y míralos en directo desde un dashboard minimalista.",
   "permissions": ["storage", "alarms", "notifications", "offscreen"],
   "background": {
     "service_worker": "src/background/index.ts",
@@ -10,6 +10,7 @@
   },
   "host_permissions": [
     "https://*.twitch.tv/*",
+    "https://*.kick.com/*",
     "https://superfavtwitch.onrender.com/*"
   ],
   "content_security_policy": {
@@ -22,7 +23,7 @@
   },
   "action": {
     "default_popup": "index.html",
-    "default_title": "SuperFav for Twitch",
+    "default_title": "SuperFav",
     "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",
@@ -33,6 +34,11 @@
     {
       "matches": ["https://*.twitch.tv/*"],
       "js": ["src/content/injectSuperFav.ts"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://*.kick.com/*"],
+      "js": ["src/content/injectKickSuperFav.ts"],
       "run_at": "document_idle"
     }
   ]

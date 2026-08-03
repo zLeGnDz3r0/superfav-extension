@@ -1,8 +1,20 @@
 // src/background/index.ts
-// Service worker: badge, notificaciones de directo y cambios de título.
+// Service worker: badge, notificaciones de directo y cambios de título (Twitch + Kick).
 
 declare const __API_BASE__: string;
 
+import {
+  FAVS_KEY,
+  channelUrl,
+  favKey,
+  favKeyOf,
+  loginsForPlatform,
+  needsFavMigration,
+  normalizeFavs,
+  parseFavKey,
+  type FavEntry,
+  type Platform,
+} from '../lib/favorites';
 import {
   CHANNEL_NOTIF_KEY,
   NOTIF_SETTINGS_KEY,
@@ -23,8 +35,8 @@ async function refreshLocale(): Promise<LocaleId> {
   return cachedLocale;
 }
 
-const FAVS_KEY = 'superfavs';
-const LIVE_KEY = 'live_logins';
+const LIVE_KEY = 'live_keys';
+const LEGACY_LIVE_KEY = 'live_logins';
 const TITLES_KEY = 'channel_titles';
 const NOTIF_MAP_KEY = 'notif_login_map';
 const LIVE_INIT_KEY = 'live_logins_initialized';
@@ -39,6 +51,7 @@ const CLOSE_AFTER_MS = 3 * 60 * 1000;
 const TITLE_POLL_MS = 30 * 1000;
 
 interface LiveStream {
+  platform: Platform;
   user_login: string;
   user_name: string;
   game_name: string;
@@ -46,6 +59,7 @@ interface LiveStream {
 }
 
 interface ChannelInfo {
+  platform: Platform;
   user_login: string;
   user_name: string;
   title: string;
@@ -66,19 +80,23 @@ function titlesDiffer(oldTitle: string | undefined, newTitle: string): boolean {
   return normalizeTitle(oldTitle) !== normalizeTitle(newTitle);
 }
 
-function liveNotifId(login: string): string {
-  return `${LIVE_NOTIF_PREFIX}${login}`;
+function streamKey(stream: { platform: Platform; user_login: string }): string {
+  return favKey(stream.platform, stream.user_login);
 }
 
-function titleNotifId(login: string): string {
-  return `${TITLE_NOTIF_PREFIX}${login}`;
+function liveNotifId(key: string): string {
+  return `${LIVE_NOTIF_PREFIX}${key}`;
+}
+
+function titleNotifId(key: string): string {
+  return `${TITLE_NOTIF_PREFIX}${key}`;
 }
 
 function closeAlarmName(notifId: string): string {
   return `${CLOSE_ALARM_PREFIX}${notifId}`;
 }
 
-function loginFromNotifId(id: string): string | null {
+function keyFromNotifId(id: string): string | null {
   if (id.startsWith(LIVE_NOTIF_PREFIX)) return id.slice(LIVE_NOTIF_PREFIX.length);
   if (id.startsWith(TITLE_NOTIF_PREFIX)) return id.slice(TITLE_NOTIF_PREFIX.length);
   return null;
@@ -89,9 +107,14 @@ function notifIdFromCloseAlarm(name: string): string | null {
   return name.slice(CLOSE_ALARM_PREFIX.length);
 }
 
-async function getFavs(): Promise<string[]> {
+async function getFavs(): Promise<FavEntry[]> {
   const result = await chrome.storage.sync.get([FAVS_KEY]);
-  return result[FAVS_KEY] ?? [];
+  const raw = result[FAVS_KEY];
+  const favs = normalizeFavs(raw);
+  if (needsFavMigration(raw)) {
+    await chrome.storage.sync.set({ [FAVS_KEY]: favs });
+  }
+  return favs;
 }
 
 async function getNotifMap(): Promise<NotifLoginMap> {
@@ -115,7 +138,7 @@ async function getChannelNotifMap(): Promise<ChannelNotifMap> {
   return normalizeChannelPrefs(result[CHANNEL_NOTIF_KEY] as ChannelNotifMap | undefined);
 }
 
-async function pruneChannelNotifPrefs(favs: string[]): Promise<void> {
+async function pruneChannelNotifPrefs(favs: FavEntry[]): Promise<void> {
   const map = await getChannelNotifMap();
   const pruned = pruneChannelPrefs(map, favs);
   if (Object.keys(pruned).length === Object.keys(map).length) {
@@ -162,15 +185,12 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** Play the chosen toast sound for any desktop notification (live or title). */
 async function playNotificationSound(soundId: NotifSoundId): Promise<void> {
   const file = soundFileFor(soundId);
   if (!file) return;
 
   try {
     await ensureOffscreenDocument();
-
-    // Offscreen may need a moment after createDocument before listeners exist.
     let lastError: unknown;
     for (let attempt = 0; attempt < 6; attempt++) {
       try {
@@ -183,18 +203,17 @@ async function playNotificationSound(soundId: NotifSoundId): Promise<void> {
     }
     void lastError;
   } catch {
-    // Audio is best-effort; never block the toast.
+    // Audio is best-effort.
   }
 }
 
 async function showNotification(
   notifId: string,
-  login: string,
+  key: string,
   title: string,
   message: string,
   soundId: NotifSoundId,
 ): Promise<void> {
-  // Start sound for every toast (directo + título); await so playback begins reliably.
   const soundPromise = playNotificationSound(soundId);
 
   await chrome.notifications.create(notifId, {
@@ -210,7 +229,7 @@ async function showNotification(
   await soundPromise;
 
   const map = await getNotifMap();
-  map[notifId] = login;
+  map[notifId] = key;
   await setNotifMap(map);
 
   await chrome.alarms.create(closeAlarmName(notifId), {
@@ -222,17 +241,17 @@ async function notifyLive(stream: LiveStream): Promise<void> {
   const settings = await getNotifSettings();
   if (!settings.desktopEnabled) return;
 
-  const login = stream.user_login.toLowerCase();
+  const key = streamKey(stream);
   const channelPrefs = await getChannelNotifMap();
-  if (!getChannelPref(channelPrefs, login).live) return;
+  if (!getChannelPref(channelPrefs, key).live) return;
 
   const locale = await refreshLocale();
   const game = stream.game_name || t(locale, 'noCategory');
   const message = stream.title ? `${game} · ${stream.title}` : game;
 
   await showNotification(
-    liveNotifId(login),
-    login,
+    liveNotifId(key),
+    key,
     t(locale, 'notifLive', { name: stream.user_name }),
     message,
     settings.soundId,
@@ -243,9 +262,9 @@ async function notifyTitleChange(channel: ChannelInfo): Promise<void> {
   const settings = await getNotifSettings();
   if (!settings.titleChangeEnabled) return;
 
-  const login = channel.user_login.toLowerCase();
+  const key = streamKey(channel);
   const channelPrefs = await getChannelNotifMap();
-  if (!getChannelPref(channelPrefs, login).title) return;
+  if (!getChannelPref(channelPrefs, key).title) return;
 
   const locale = await refreshLocale();
   const titleText = channel.title.trim() || t(locale, 'noTitle');
@@ -253,8 +272,8 @@ async function notifyTitleChange(channel: ChannelInfo): Promise<void> {
   const message = `${game} · ${titleText}`;
 
   await showNotification(
-    titleNotifId(login),
-    login,
+    titleNotifId(key),
+    key,
     t(locale, 'notifTitleChange', { name: channel.user_name }),
     message,
     settings.soundId,
@@ -271,102 +290,142 @@ async function updateBadge(count: number): Promise<void> {
   }
 }
 
-/** Sync badge + local live list from a definitive set of live SuperFav logins. */
-async function syncLiveState(liveLogins: string[]): Promise<void> {
+async function syncLiveState(liveKeys: string[]): Promise<void> {
   const normalized = [
     ...new Set(
-      liveLogins
-        .map((l) => l.trim().toLowerCase())
-        .filter((l) => l.length > 0),
+      liveKeys
+        .map((k) => k.trim().toLowerCase())
+        .filter((k) => parseFavKey(k) != null),
     ),
   ];
   await updateBadge(normalized.length);
   await chrome.storage.local.set({
     [LIVE_KEY]: normalized,
+    [LEGACY_LIVE_KEY]: normalized.map((k) => parseFavKey(k)?.login ?? k),
     [LIVE_INIT_KEY]: true,
   });
 }
 
-async function pollStreams(favs: string[]): Promise<void> {
-  const res = await fetch(`${__API_BASE__}/api/streams?users=${favs.join(',')}`);
-  if (!res.ok) return;
-
+async function fetchPlatformStreams(
+  platform: Platform,
+  logins: string[],
+): Promise<LiveStream[]> {
+  if (logins.length === 0) return [];
+  const path =
+    platform === 'kick' ? '/api/kick/streams' : '/api/streams';
+  const res = await fetch(`${__API_BASE__}${path}?users=${logins.join(',')}`);
+  if (!res.ok) return [];
   const data = await res.json();
-  const favSet = new Set(favs.map((f) => f.toLowerCase()));
-  const streams: LiveStream[] = ((data.data ?? []) as LiveStream[]).filter((s) =>
-    favSet.has(s.user_login.toLowerCase()),
-  );
-  const currentLogins = new Set(streams.map((s) => s.user_login.toLowerCase()));
+  const favSet = new Set(logins);
+  return ((data.data ?? []) as LiveStream[])
+    .map((s) => ({
+      ...s,
+      platform: s.platform ?? platform,
+      user_login: s.user_login.toLowerCase(),
+    }))
+    .filter((s) => favSet.has(s.user_login.toLowerCase()));
+}
 
-  const local = await chrome.storage.local.get([LIVE_KEY, LIVE_INIT_KEY, TITLES_KEY]);
-  const previousLogins = new Set<string>(
-    ((local[LIVE_KEY] as string[] | undefined) ?? []).map((l) => l.toLowerCase()),
-  );
+async function fetchPlatformChannels(
+  platform: Platform,
+  logins: string[],
+): Promise<ChannelInfo[]> {
+  if (logins.length === 0) return [];
+  const path =
+    platform === 'kick' ? '/api/kick/channels' : '/api/channels';
+  const res = await fetch(`${__API_BASE__}${path}?users=${logins.join(',')}`);
+  if (!res.ok) return [];
+  const data = await res.json();
+  return ((data.data ?? []) as ChannelInfo[]).map((c) => ({
+    ...c,
+    platform: c.platform ?? platform,
+    user_login: c.user_login.toLowerCase(),
+  }));
+}
+
+async function pollStreams(favs: FavEntry[]): Promise<void> {
+  const [twitchStreams, kickStreams] = await Promise.all([
+    fetchPlatformStreams('twitch', loginsForPlatform(favs, 'twitch')),
+    fetchPlatformStreams('kick', loginsForPlatform(favs, 'kick')),
+  ]);
+  const streams = [...twitchStreams, ...kickStreams];
+  const favKeySet = new Set(favs.map(favKeyOf));
+  const currentKeys = new Set(streams.map(streamKey));
+
+  const local = await chrome.storage.local.get([LIVE_KEY, LEGACY_LIVE_KEY, LIVE_INIT_KEY, TITLES_KEY]);
+  const previousRaw = (local[LIVE_KEY] as string[] | undefined)
+    ?? ((local[LEGACY_LIVE_KEY] as string[] | undefined) ?? []).map((l) => `twitch:${l}`);
+  const previousKeys = new Set(previousRaw.map((k) => k.toLowerCase()));
   const previousTitles = (local[TITLES_KEY] as TitleMap | undefined) ?? {};
   const initialized = local[LIVE_INIT_KEY] === true;
   const titleUpdates: TitleMap = { ...previousTitles };
 
   if (initialized) {
     for (const stream of streams) {
-      const login = stream.user_login.toLowerCase();
-      if (!previousLogins.has(login)) {
+      const key = streamKey(stream);
+      if (!previousKeys.has(key)) {
         await notifyLive(stream);
 
-        if (titlesDiffer(previousTitles[login], stream.title ?? '')) {
+        if (titlesDiffer(previousTitles[key], stream.title ?? '')) {
           await notifyTitleChange({
-            user_login: login,
+            platform: stream.platform,
+            user_login: stream.user_login,
             user_name: stream.user_name,
             title: stream.title ?? '',
             game_name: stream.game_name,
           });
         }
 
-        titleUpdates[login] = stream.title ?? '';
+        titleUpdates[key] = stream.title ?? '';
       }
     }
   } else {
     for (const stream of streams) {
-      titleUpdates[stream.user_login.toLowerCase()] = stream.title ?? '';
+      titleUpdates[streamKey(stream)] = stream.title ?? '';
     }
   }
 
-  for (const login of Object.keys(titleUpdates)) {
-    if (!favSet.has(login)) delete titleUpdates[login];
+  for (const key of Object.keys(titleUpdates)) {
+    if (!favKeySet.has(key)) delete titleUpdates[key];
   }
 
-  await syncLiveState([...currentLogins]);
+  await syncLiveState([...currentKeys]);
   await chrome.storage.local.set({
     [TITLES_KEY]: titleUpdates,
   });
 }
 
-async function pollTitles(favs: string[]): Promise<void> {
-  const res = await fetch(`${__API_BASE__}/api/channels?users=${favs.join(',')}`);
-  if (!res.ok) return;
-
-  const data = await res.json();
-  const channels: ChannelInfo[] = data.data ?? [];
-  const favSet = new Set(favs.map((f) => f.toLowerCase()));
+async function pollTitles(favs: FavEntry[]): Promise<void> {
+  const [twitchChannels, kickChannels] = await Promise.all([
+    fetchPlatformChannels('twitch', loginsForPlatform(favs, 'twitch')),
+    fetchPlatformChannels('kick', loginsForPlatform(favs, 'kick')),
+  ]);
+  const channels = [...twitchChannels, ...kickChannels];
+  const favKeySet = new Set(favs.map(favKeyOf));
 
   const local = await chrome.storage.local.get([TITLES_KEY, TITLES_INIT_KEY]);
   const previousTitles = (local[TITLES_KEY] as TitleMap | undefined) ?? {};
   const initialized = local[TITLES_INIT_KEY] === true;
   const nextTitles: TitleMap = { ...previousTitles };
 
-  for (const login of Object.keys(nextTitles)) {
-    if (!favSet.has(login)) delete nextTitles[login];
+  for (const key of Object.keys(nextTitles)) {
+    if (!favKeySet.has(key)) delete nextTitles[key];
   }
 
   for (const channel of channels) {
-    const login = channel.user_login.toLowerCase();
+    const key = streamKey(channel);
     const newTitle = channel.title ?? '';
-    const oldTitle = previousTitles[login];
+    const oldTitle = previousTitles[key] ?? previousTitles[channel.user_login];
 
     if (initialized && titlesDiffer(oldTitle, newTitle)) {
       await notifyTitleChange(channel);
     }
 
-    nextTitles[login] = newTitle;
+    nextTitles[key] = newTitle;
+    // Drop legacy bare-login title keys after migration
+    if (previousTitles[channel.user_login] !== undefined) {
+      delete nextTitles[channel.user_login];
+    }
   }
 
   await chrome.storage.local.set({
@@ -480,12 +539,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (!message || typeof message !== 'object') return false;
   if ((message as { type?: string }).type !== 'superfav-sync-live') return false;
 
-  const raw = (message as { logins?: unknown }).logins;
-  const logins = Array.isArray(raw)
+  const raw = (message as { keys?: unknown; logins?: unknown }).keys
+    ?? (message as { logins?: unknown }).logins;
+  const keys = Array.isArray(raw)
     ? raw.filter((l): l is string => typeof l === 'string')
     : [];
 
-  void syncLiveState(logins).then(() => sendResponse({ ok: true }));
+  void syncLiveState(keys).then(() => sendResponse({ ok: true }));
   return true;
 });
 
@@ -495,7 +555,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
     void refreshLocale();
   }
   if (!changes[FAVS_KEY]) return;
-  const nextFavs = (changes[FAVS_KEY].newValue as string[] | undefined) ?? [];
+  const nextFavs = normalizeFavs(changes[FAVS_KEY].newValue);
   void pruneChannelNotifPrefs(nextFavs);
   void poll();
 });
@@ -503,18 +563,18 @@ chrome.storage.onChanged.addListener((changes, area) => {
 chrome.notifications.onClicked.addListener((notificationId) => {
   void (async () => {
     const map = await getNotifMap();
-    const login = map[notificationId] ?? loginFromNotifId(notificationId);
-    if (login) {
-      await chrome.tabs.create({ url: `https://twitch.tv/${login}` });
-      await cleanupNotification(notificationId);
-    }
+    const key = map[notificationId] ?? keyFromNotifId(notificationId);
+    if (!key) return;
+    const fav = parseFavKey(key) ?? { platform: 'twitch' as const, login: key };
+    await chrome.tabs.create({ url: channelUrl(fav.platform, fav.login) });
+    await cleanupNotification(notificationId);
   })();
 });
 
 chrome.notifications.onClosed.addListener((notificationId) => {
   void (async () => {
     const map = await getNotifMap();
-    if (map[notificationId] ?? loginFromNotifId(notificationId)) {
+    if (map[notificationId] ?? keyFromNotifId(notificationId)) {
       await cleanupNotification(notificationId);
     }
   })();

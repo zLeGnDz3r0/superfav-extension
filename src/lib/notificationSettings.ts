@@ -3,6 +3,12 @@ import {
   normalizeSoundId,
   type NotifSoundId,
 } from './notifSounds';
+import {
+  favKeyOf,
+  normalizeLogin,
+  parseFavKey,
+  type FavEntry,
+} from './favorites';
 
 export const NOTIF_SETTINGS_KEY = 'superfav_notif_settings';
 export const CHANNEL_NOTIF_KEY = 'superfav_channel_notif';
@@ -59,46 +65,63 @@ export function normalizeChannelPref(
   };
 }
 
+/**
+ * Normalize channel prefs. Legacy keys were bare Twitch logins;
+ * migrate them to `twitch:login`.
+ */
 export function normalizeChannelPrefs(
   raw: ChannelNotifMap | undefined,
 ): ChannelNotifMap {
   if (!raw || typeof raw !== 'object') return {};
   const next: ChannelNotifMap = {};
-  for (const [login, pref] of Object.entries(raw)) {
-    const key = login.toLowerCase();
-    if (!key) continue;
-    next[key] = normalizeChannelPref(pref);
+  for (const [key, pref] of Object.entries(raw)) {
+    const parsed = parseFavKey(key);
+    const normalizedKey = parsed
+      ? favKeyOf(parsed)
+      : `twitch:${normalizeLogin(key)}`;
+    if (!normalizedKey.endsWith(':') && normalizedKey.includes(':')) {
+      next[normalizedKey] = normalizeChannelPref(pref);
+    }
   }
   return next;
 }
 
 export function getChannelPref(
   map: ChannelNotifMap,
-  login: string,
+  keyOrLogin: string,
+  platform?: FavEntry['platform'],
 ): ChannelNotifPref {
-  return normalizeChannelPref(map[login.toLowerCase()]);
+  const key =
+    platform != null
+      ? `${platform}:${normalizeLogin(keyOrLogin)}`
+      : parseFavKey(keyOrLogin)
+        ? keyOrLogin.toLowerCase()
+        : `twitch:${normalizeLogin(keyOrLogin)}`;
+  return normalizeChannelPref(map[key]);
 }
 
 export function setChannelPrefInMap(
   map: ChannelNotifMap,
-  login: string,
+  key: string,
   pref: ChannelNotifPref,
 ): ChannelNotifMap {
+  const parsed = parseFavKey(key);
+  const normalized = parsed ? favKeyOf(parsed) : `twitch:${normalizeLogin(key)}`;
   return {
     ...map,
-    [login.toLowerCase()]: normalizeChannelPref(pref),
+    [normalized]: normalizeChannelPref(pref),
   };
 }
 
-/** Keep only prefs for logins that are still SuperFavs. */
+/** Keep only prefs for SuperFavs that still exist. */
 export function pruneChannelPrefs(
   map: ChannelNotifMap,
-  favs: string[],
+  favs: FavEntry[],
 ): ChannelNotifMap {
-  const favSet = new Set(favs.map((f) => f.toLowerCase()));
+  const favSet = new Set(favs.map(favKeyOf));
   const next: ChannelNotifMap = {};
-  for (const [login, pref] of Object.entries(map)) {
-    if (favSet.has(login)) next[login] = normalizeChannelPref(pref);
+  for (const [key, pref] of Object.entries(map)) {
+    if (favSet.has(key)) next[key] = normalizeChannelPref(pref);
   }
   return next;
 }

@@ -1,6 +1,16 @@
 // src/popup/Popup.tsx
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  FAVS_KEY,
+  channelUrl,
+  favKeyOf,
+  loginsForPlatform,
+  needsFavMigration,
+  normalizeFavs,
+  type FavEntry,
+  type Platform,
+} from '../lib/favorites';
+import {
   LOCALE_KEY,
   LOCALE_OPTIONS,
   loadStoredLocale,
@@ -32,6 +42,7 @@ declare const __API_BASE__: string;
 const API_BASE = __API_BASE__;
 
 interface Stream {
+  platform: Platform;
   id: string;
   user_login: string;
   user_name: string;
@@ -46,22 +57,60 @@ type Status = 'loading' | 'ready' | 'error';
 const formatViewers = (n: number): string =>
   n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}K` : String(n);
 
-function Diamond({ className }: { className?: string }) {
+function SplitDiamond({ className }: { className?: string }) {
   return (
-    <svg
-      viewBox="0 0 24 24"
-      className={className}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M6 3h12l4 6-10 13L2 9Z" />
-      <path d="M11 3 8 9l4 13 4-13-3-6" />
-      <path d="M2 9h20" />
+    <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
+      <defs>
+        <linearGradient id="sf-popup-split" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="50%" stopColor="#9146FF" />
+          <stop offset="50%" stopColor="#53FC18" />
+        </linearGradient>
+      </defs>
+      <path
+        d="M6 3h12l4 6-10 13L2 9Z"
+        fill="url(#sf-popup-split)"
+      />
+      <g
+        fill="none"
+        stroke="#0E0E10"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        opacity="0.35"
+      >
+        <path d="M11 3 8 9l4 13 4-13-3-6" />
+        <path d="M2 9h20" />
+      </g>
     </svg>
+  );
+}
+
+function PlatformBadge({ platform }: { platform: Platform }) {
+  const isKick = platform === 'kick';
+  return (
+    <span
+      className={`inline-flex h-5 shrink-0 items-center rounded px-1.5 text-[9px] font-bold uppercase tracking-wide ${
+        isKick ? 'sf-platform-kick' : 'sf-platform-twitch'
+      }`}
+      title={isKick ? 'Kick' : 'Twitch'}
+    >
+      {isKick ? 'Kick' : 'Twitch'}
+    </span>
+  );
+}
+
+function PlatformGlyph({ platform }: { platform: Platform }) {
+  const isKick = platform === 'kick';
+  return (
+    <span
+      className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[10px] font-bold ${
+        isKick ? 'sf-platform-kick' : 'sf-platform-twitch'
+      }`}
+      title={isKick ? 'Kick' : 'Twitch'}
+      aria-label={isKick ? 'Kick' : 'Twitch'}
+    >
+      {isKick ? 'K' : 'T'}
+    </span>
   );
 }
 
@@ -172,11 +221,38 @@ function ToggleRow({
   );
 }
 
+async function fetchStreamsFor(
+  platform: Platform,
+  logins: string[],
+): Promise<Stream[]> {
+  if (logins.length === 0) return [];
+  const path = platform === 'kick' ? '/api/kick/streams' : '/api/streams';
+  const res = await fetch(`${API_BASE}${path}?users=${logins.join(',')}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = await res.json();
+  const favSet = new Set(logins);
+  return ((data.data ?? []) as Stream[])
+    .map((s) => ({
+      ...s,
+      platform: s.platform ?? platform,
+      user_login: s.user_login.toLowerCase(),
+    }))
+    .filter((s) => favSet.has(s.user_login));
+}
+
+function thumbSrc(url: string, platform: Platform): string {
+  if (!url) return '';
+  if (platform === 'twitch') {
+    return url.replace('{width}', '320').replace('{height}', '180');
+  }
+  return url;
+}
+
 export default function Popup() {
   const [streams, setStreams] = useState<Stream[]>([]);
   const [status, setStatus] = useState<Status>('loading');
   const [hasFavs, setHasFavs] = useState(false);
-  const [favs, setFavs] = useState<string[]>([]);
+  const [favs, setFavs] = useState<FavEntry[]>([]);
   const [notifSettings, setNotifSettings] = useState<NotificationSettings>(DEFAULT_NOTIF_SETTINGS);
   const [channelPrefs, setChannelPrefs] = useState<ChannelNotifMap>({});
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -206,16 +282,20 @@ export default function Popup() {
     setPrefHint(null);
   }, []);
 
-  const syncLiveBadge = useCallback((logins: string[]) => {
+  const syncLiveBadge = useCallback((keys: string[]) => {
     void chrome.runtime
-      .sendMessage({ type: 'superfav-sync-live', logins })
+      .sendMessage({ type: 'superfav-sync-live', keys })
       .catch(() => {});
   }, []);
 
   const load = useCallback(() => {
     setStatus('loading');
-    chrome.storage.sync.get(['superfavs'], async (result) => {
-      const nextFavs: string[] = result.superfavs ?? [];
+    chrome.storage.sync.get([FAVS_KEY], async (result) => {
+      const raw = result[FAVS_KEY];
+      const nextFavs = normalizeFavs(raw);
+      if (needsFavMigration(raw)) {
+        void chrome.storage.sync.set({ [FAVS_KEY]: nextFavs });
+      }
       setFavs(nextFavs);
       setHasFavs(nextFavs.length > 0);
       if (nextFavs.length === 0) {
@@ -225,16 +305,20 @@ export default function Popup() {
         return;
       }
       try {
-        const res = await fetch(`${API_BASE}/api/streams?users=${nextFavs.join(',')}`);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-        const favSet = new Set(nextFavs.map((f) => f.toLowerCase()));
-        const live: Stream[] = ((data.data ?? []) as Stream[])
-          .filter((s) => favSet.has(s.user_login.toLowerCase()))
-          .sort((a, b) => b.viewer_count - a.viewer_count);
+        const results = await Promise.allSettled([
+          fetchStreamsFor('twitch', loginsForPlatform(nextFavs, 'twitch')),
+          fetchStreamsFor('kick', loginsForPlatform(nextFavs, 'kick')),
+        ]);
+        const twitch = results[0].status === 'fulfilled' ? results[0].value : [];
+        const kick = results[1].status === 'fulfilled' ? results[1].value : [];
+        if (results.every((r) => r.status === 'rejected')) {
+          setStatus('error');
+          return;
+        }
+        const live = [...twitch, ...kick].sort((a, b) => b.viewer_count - a.viewer_count);
         setStreams(live);
         setStatus('ready');
-        syncLiveBadge(live.map((s) => s.user_login.toLowerCase()));
+        syncLiveBadge(live.map((s) => favKeyOf({ platform: s.platform, login: s.user_login })));
       } catch {
         setStatus('error');
       }
@@ -246,14 +330,17 @@ export default function Popup() {
   }, [load]);
 
   useEffect(() => {
-    chrome.storage.sync.get([NOTIF_SETTINGS_KEY, CHANNEL_NOTIF_KEY, 'superfavs'], (res) => {
+    chrome.storage.sync.get([NOTIF_SETTINGS_KEY, CHANNEL_NOTIF_KEY, FAVS_KEY], (res) => {
       setNotifSettings(
         normalizeNotificationSettings(res[NOTIF_SETTINGS_KEY] as Partial<NotificationSettings> | undefined),
       );
       const prefs = normalizeChannelPrefs(res[CHANNEL_NOTIF_KEY] as ChannelNotifMap | undefined);
-      const storedFavs: string[] = res.superfavs ?? [];
+      const storedFavs = normalizeFavs(res[FAVS_KEY]);
       setFavs(storedFavs);
       setChannelPrefs(pruneChannelPrefs(prefs, storedFavs));
+      if (Object.keys(prefs).some((k) => !k.includes(':'))) {
+        void chrome.storage.sync.set({ [CHANNEL_NOTIF_KEY]: pruneChannelPrefs(prefs, storedFavs) });
+      }
     });
   }, []);
 
@@ -269,13 +356,18 @@ export default function Popup() {
   }, []);
 
   const sortedFavs = useMemo(
-    () => [...favs].map((f) => f.toLowerCase()).sort((a, b) => a.localeCompare(b)),
+    () =>
+      [...favs].sort((a, b) => {
+        const byLogin = a.login.localeCompare(b.login);
+        return byLogin !== 0 ? byLogin : a.platform.localeCompare(b.platform);
+      }),
     [favs],
   );
 
   const toggleChannelPref = useCallback(
-    (login: string, key: keyof ChannelNotifPref) => {
-      const current = getChannelPref(channelPrefs, login);
+    (fav: FavEntry, key: keyof ChannelNotifPref) => {
+      const favKey = favKeyOf(fav);
+      const current = getChannelPref(channelPrefs, favKey);
       const turningOn = !current[key];
 
       if (turningOn) {
@@ -303,13 +395,13 @@ export default function Popup() {
 
       setPrefHint(null);
       const nextPref: ChannelNotifPref = { ...current, [key]: !current[key] };
-      persistChannelPrefs(setChannelPrefInMap(channelPrefs, login, nextPref));
+      persistChannelPrefs(setChannelPrefInMap(channelPrefs, favKey, nextPref));
     },
     [channelPrefs, locale, notifSettings, persistChannelPrefs],
   );
 
-  const openStream = (login: string) => {
-    const url = `https://twitch.tv/${login}`;
+  const openStream = (stream: Stream) => {
+    const url = channelUrl(stream.platform, stream.user_login);
     if (chrome.tabs?.create) chrome.tabs.create({ url });
     else window.open(url, '_blank');
   };
@@ -319,11 +411,12 @@ export default function Popup() {
       <div className="sf-popup-inner select-none font-sans text-sf-text">
         <header className="flex items-center justify-between border-b border-white/[0.06] px-4 py-3">
           <div className="flex items-center gap-2">
-            <span className="flex h-6 w-6 items-center justify-center rounded-md bg-sf-accent/15 text-sf-accent">
-              <Diamond className="h-4 w-4" />
+            <span className="flex h-6 w-6 items-center justify-center rounded-md bg-white/[0.06]">
+              <SplitDiamond className="h-4 w-4" />
             </span>
             <h1 className="text-sm font-semibold tracking-tight">
-              SuperFav <span className="font-normal text-white/40">for Twitch</span>
+              SuperFav{' '}
+              <span className="font-normal text-white/40">Twitch &amp; Kick</span>
             </h1>
           </div>
           <div className="flex items-center gap-1.5">
@@ -418,28 +511,41 @@ export default function Popup() {
               {status === 'ready' && streams.length > 0 && (
                 <ul className="flex flex-col gap-2">
                   {streams.map((s, i) => (
-                    <li key={s.id}>
+                    <li key={`${s.platform}:${s.id}:${s.user_login}`}>
                       <button
-                        onClick={() => openStream(s.user_login)}
+                        onClick={() => openStream(s)}
                         style={{ animationDelay: `${i * 45}ms` }}
                         className="sf-card flex w-full items-center gap-3 rounded-xl bg-sf-surface p-2.5 text-left transition-colors hover:bg-sf-surface2"
                       >
                         <div className="relative aspect-video w-[76px] shrink-0 overflow-hidden rounded-lg bg-black/40">
-                          <img
-                            src={s.thumbnail_url
-                              .replace('{width}', '320')
-                              .replace('{height}', '180')}
-                            alt=""
-                            loading="lazy"
-                            className="h-full w-full object-cover"
-                          />
+                          {s.thumbnail_url ? (
+                            <img
+                              src={thumbSrc(s.thumbnail_url, s.platform)}
+                              alt=""
+                              loading="lazy"
+                              className="h-full w-full object-cover"
+                            />
+                          ) : (
+                            <div className="flex h-full w-full items-center justify-center text-[10px] text-sf-muted">
+                              LIVE
+                            </div>
+                          )}
                           <span className="absolute left-1 top-1 rounded bg-red-600 px-1 py-px text-[9px] font-bold uppercase leading-none tracking-wide text-white">
                             Live
                           </span>
+                          <span className="absolute bottom-1 right-1">
+                            <PlatformBadge platform={s.platform} />
+                          </span>
                         </div>
                         <div className="min-w-0 flex-1">
-                          <h3 className="truncate text-sm font-semibold">{s.user_name}</h3>
-                          <p className="truncate text-xs text-sf-accent">
+                          <div className="mb-0.5 flex items-center gap-1.5">
+                            <h3 className="truncate text-sm font-semibold">{s.user_name}</h3>
+                          </div>
+                          <p
+                            className={`truncate text-xs ${
+                              s.platform === 'kick' ? 'text-sf-kick' : 'text-sf-accent'
+                            }`}
+                          >
                             {s.game_name || t(locale, 'noCategory')}
                           </p>
                           <p className="truncate text-xs text-sf-muted">{s.title}</p>
@@ -472,11 +578,11 @@ function ChannelSettingsView({
   onSoundChange,
 }: {
   locale: LocaleId;
-  favs: string[];
+  favs: FavEntry[];
   channelPrefs: ChannelNotifMap;
   soundId: NotifSoundId;
   hint: string | null;
-  onToggle: (login: string, key: keyof ChannelNotifPref) => void;
+  onToggle: (fav: FavEntry, key: keyof ChannelNotifPref) => void;
   onLocaleChange: (locale: LocaleId) => void;
   onSoundChange: (id: NotifSoundId) => void;
 }) {
@@ -590,8 +696,8 @@ function ChannelSettingsView({
 
       {favs.length === 0 ? (
         <div className="flex h-[180px] flex-col items-center justify-center px-6 text-center">
-          <span className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-white/[0.04] text-sf-muted/50">
-            <Diamond className="h-7 w-7" />
+          <span className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-white/[0.04]">
+            <SplitDiamond className="h-7 w-7" />
           </span>
           <h2 className="mb-1 text-base font-semibold">{t(locale, 'noSuperFavsTitle')}</h2>
           <p className="text-sm text-sf-muted">{t(locale, 'noSuperFavsSettingsDesc')}</p>
@@ -638,31 +744,31 @@ function ChannelSettingsView({
               )}
 
               <ul className="flex flex-col gap-2">
-                {favs.map((login) => {
-                  const pref = getChannelPref(channelPrefs, login);
+                {favs.map((fav) => {
+                  const key = favKeyOf(fav);
+                  const pref = getChannelPref(channelPrefs, key);
                   return (
-                    <li key={login} className="rounded-xl bg-sf-surface px-3 py-2.5">
+                    <li key={key} className="rounded-xl bg-sf-surface px-3 py-2.5">
                       <div className="mb-2 flex items-center gap-2">
-                        <span className="flex h-6 w-6 items-center justify-center rounded-md bg-sf-accent/15 text-sf-accent">
-                          <Diamond className="h-3.5 w-3.5" />
-                        </span>
-                        <span className="truncate text-sm font-semibold">{login}</span>
+                        <PlatformGlyph platform={fav.platform} />
+                        <span className="truncate text-sm font-semibold">{fav.login}</span>
+                        <PlatformBadge platform={fav.platform} />
                       </div>
                       <div className="flex items-center justify-between gap-3 pl-8">
                         <div className="flex items-center gap-2">
                           <span className="text-[11px] text-sf-muted">{t(locale, 'liveLabel')}</span>
                           <MiniToggle
                             checked={pref.live}
-                            ariaLabel={t(locale, 'liveAria', { name: login })}
-                            onChange={() => onToggle(login, 'live')}
+                            ariaLabel={t(locale, 'liveAria', { name: fav.login })}
+                            onChange={() => onToggle(fav, 'live')}
                           />
                         </div>
                         <div className="flex items-center gap-2">
                           <span className="text-[11px] text-sf-muted">{t(locale, 'titleLabel')}</span>
                           <MiniToggle
                             checked={pref.title}
-                            ariaLabel={t(locale, 'titleAria', { name: login })}
-                            onChange={() => onToggle(login, 'title')}
+                            ariaLabel={t(locale, 'titleAria', { name: fav.login })}
+                            onChange={() => onToggle(fav, 'title')}
                           />
                         </div>
                       </div>
@@ -709,8 +815,8 @@ function Preloader({ locale }: { locale: LocaleId }) {
     <div className="flex h-[260px] flex-col items-center justify-center gap-5">
       <div className="relative h-14 w-14">
         <span className="sf-spinner absolute inset-0 block" />
-        <span className="sf-bolt-pulse absolute inset-0 flex items-center justify-center text-sf-accent">
-          <Diamond className="h-6 w-6" />
+        <span className="sf-bolt-pulse absolute inset-0 flex items-center justify-center">
+          <SplitDiamond className="h-6 w-6" />
         </span>
       </div>
       <p className="text-sm text-sf-muted">{t(locale, 'searching')}</p>
@@ -721,8 +827,8 @@ function Preloader({ locale }: { locale: LocaleId }) {
 function EmptyState({ locale, hasFavs }: { locale: LocaleId; hasFavs: boolean }) {
   return (
     <div className="flex h-[260px] flex-col items-center justify-center px-6 text-center">
-      <span className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-white/[0.04] text-sf-muted/50">
-        <Diamond className="h-7 w-7" />
+      <span className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-white/[0.04]">
+        <SplitDiamond className="h-7 w-7" />
       </span>
       <h2 className="mb-1 text-base font-semibold">
         {hasFavs ? t(locale, 'emptyNoneLive') : t(locale, 'emptyNoFavs')}
@@ -754,7 +860,7 @@ function ErrorState({ locale, onRetry }: { locale: LocaleId; onRetry: () => void
       <p className="mb-4 text-sm text-sf-muted">{t(locale, 'errorDesc')}</p>
       <button
         onClick={onRetry}
-        className="rounded-lg bg-sf-accent px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-sf-accent2"
+        className="rounded-lg bg-gradient-to-r from-sf-twitch to-sf-kick px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90"
       >
         {t(locale, 'retry')}
       </button>
