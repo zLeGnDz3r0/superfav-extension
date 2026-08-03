@@ -37,6 +37,7 @@ import {
   soundFileFor,
   type NotifSoundId,
 } from '../lib/notifSounds';
+import { fetchKickStreams, kickThumbSrc } from '../lib/kickApi';
 
 declare const __API_BASE__: string;
 const API_BASE = __API_BASE__;
@@ -50,6 +51,8 @@ interface Stream {
   title: string;
   viewer_count: number;
   thumbnail_url: string;
+  /** Kick profile fallback when stream thumb CDN blocks. */
+  avatar_url?: string;
 }
 
 type Status = 'loading' | 'ready' | 'error';
@@ -212,11 +215,41 @@ async function fetchStreamsFor(
   logins: string[],
 ): Promise<Stream[]> {
   if (logins.length === 0) return [];
-  const path = platform === 'kick' ? '/api/kick/streams' : '/api/streams';
-  const res = await fetch(`${API_BASE}${path}?users=${logins.join(',')}`);
+  const favSet = new Set(logins);
+
+  if (platform === 'kick') {
+    // Prefer backend Kick Dev API (official thumbs). Fall back to browser scrape.
+    try {
+      const res = await fetch(
+        `${API_BASE}/api/kick/streams?users=${logins.join(',')}`,
+      );
+      if (res.ok) {
+        const data = await res.json();
+        return ((data.data ?? []) as Stream[])
+          .map((s) => ({
+            ...s,
+            platform: 'kick' as const,
+            user_login: s.user_login.toLowerCase(),
+            thumbnail_url: kickThumbSrc(s.thumbnail_url),
+          }))
+          .filter((s) => favSet.has(s.user_login));
+      }
+    } catch {
+      /* fall through */
+    }
+    const streams = await fetchKickStreams(logins);
+    return streams
+      .filter((s) => favSet.has(s.user_login))
+      .map((s) => ({
+        ...s,
+        thumbnail_url: kickThumbSrc(s.thumbnail_url) || s.avatar_url,
+        avatar_url: s.avatar_url,
+      }));
+  }
+
+  const res = await fetch(`${API_BASE}/api/streams?users=${logins.join(',')}`);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const data = await res.json();
-  const favSet = new Set(logins);
   return ((data.data ?? []) as Stream[])
     .map((s) => ({
       ...s,
@@ -231,7 +264,6 @@ function thumbSrc(url: string, platform: Platform): string {
   if (platform === 'twitch') {
     return url.replace('{width}', '320').replace('{height}', '180');
   }
-  // Kick URLs are already absolute (often via our /api/kick/thumbnail proxy).
   return url;
 }
 
@@ -510,9 +542,22 @@ export default function Popup() {
                               src={thumbSrc(s.thumbnail_url, s.platform)}
                               alt=""
                               loading="lazy"
+                              // Kick CDN hotlink-blocks chrome-extension referrers.
+                              referrerPolicy="no-referrer"
                               className="h-full w-full object-cover"
                               onError={(e) => {
                                 const el = e.currentTarget;
+                                const avatar = s.avatar_url;
+                                if (
+                                  s.platform === 'kick' &&
+                                  avatar &&
+                                  el.dataset.fallback !== '1' &&
+                                  el.src !== avatar
+                                ) {
+                                  el.dataset.fallback = '1';
+                                  el.src = avatar;
+                                  return;
+                                }
                                 el.style.display = 'none';
                                 const fallback = el.nextElementSibling;
                                 if (fallback instanceof HTMLElement) fallback.hidden = false;
@@ -520,7 +565,7 @@ export default function Popup() {
                             />
                           ) : null}
                           <div
-                            hidden={Boolean(s.thumbnail_url)}
+                            hidden={Boolean(s.thumbnail_url || s.avatar_url)}
                             className="flex h-full w-full items-center justify-center text-[10px] text-sf-muted"
                           >
                             LIVE

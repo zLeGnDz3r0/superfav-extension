@@ -27,6 +27,7 @@ import {
 } from '../lib/notificationSettings';
 import { LOCALE_KEY, loadStoredLocale, t, type LocaleId } from '../lib/i18n';
 import { soundFileFor, type NotifSoundId } from '../lib/notifSounds';
+import { fetchKickChannels, fetchKickStreams } from '../lib/kickApi';
 
 let cachedLocale: LocaleId = 'es';
 
@@ -311,12 +312,36 @@ async function fetchPlatformStreams(
   logins: string[],
 ): Promise<LiveStream[]> {
   if (logins.length === 0) return [];
-  const path =
-    platform === 'kick' ? '/api/kick/streams' : '/api/streams';
-  const res = await fetch(`${__API_BASE__}${path}?users=${logins.join(',')}`);
+  const favSet = new Set(logins);
+
+  if (platform === 'kick') {
+    try {
+      const res = await fetch(
+        `${__API_BASE__}/api/kick/streams?users=${logins.join(',')}`,
+      );
+      if (res.ok) {
+        const data = await res.json();
+        return ((data.data ?? []) as LiveStream[])
+          .map((s) => ({
+            ...s,
+            platform: 'kick' as const,
+            user_login: s.user_login.toLowerCase(),
+          }))
+          .filter((s) => favSet.has(s.user_login));
+      }
+    } catch {
+      /* fall through */
+    }
+    return (await fetchKickStreams(logins)).filter((s) =>
+      favSet.has(s.user_login.toLowerCase()),
+    );
+  }
+
+  const res = await fetch(
+    `${__API_BASE__}/api/streams?users=${logins.join(',')}`,
+  );
   if (!res.ok) return [];
   const data = await res.json();
-  const favSet = new Set(logins);
   return ((data.data ?? []) as LiveStream[])
     .map((s) => ({
       ...s,
@@ -331,9 +356,28 @@ async function fetchPlatformChannels(
   logins: string[],
 ): Promise<ChannelInfo[]> {
   if (logins.length === 0) return [];
-  const path =
-    platform === 'kick' ? '/api/kick/channels' : '/api/channels';
-  const res = await fetch(`${__API_BASE__}${path}?users=${logins.join(',')}`);
+  if (platform === 'kick') {
+    try {
+      const res = await fetch(
+        `${__API_BASE__}/api/kick/channels?users=${logins.join(',')}`,
+      );
+      if (res.ok) {
+        const data = await res.json();
+        const rows = ((data.data ?? []) as ChannelInfo[]).map((c) => ({
+          ...c,
+          platform: 'kick' as const,
+          user_login: c.user_login.toLowerCase(),
+        }));
+        if (rows.length > 0) return rows;
+      }
+    } catch {
+      /* fall through */
+    }
+    return fetchKickChannels(logins);
+  }
+  const res = await fetch(
+    `${__API_BASE__}/api/channels?users=${logins.join(',')}`,
+  );
   if (!res.ok) return [];
   const data = await res.json();
   return ((data.data ?? []) as ChannelInfo[]).map((c) => ({
