@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "SuperFav",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Marca tus streamers favoritos en Twitch y Kick y míralos en directo desde un dashboard minimalista.",
   "permissions": ["storage", "alarms", "notifications", "offscreen"],
   "background": {
@@ -15,7 +15,7 @@
     "https://stream.kick.com/*",
     "https://images.kick.com/*",
     "https://files.kick.com/*",
-    "https://superfavtwitch.onrender.com/*"
+    "https://superfav.onrender.com/*"
   ],
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'"

@@ -2,11 +2,11 @@
 
 **Última actualización:** 18 de julio de 2026
 
-También disponible en: [https://superfavtwitch.onrender.com/privacy](https://superfavtwitch.onrender.com/privacy)
+También disponible en: [https://superfav.onrender.com/privacy](https://superfav.onrender.com/privacy)
 
 ## 1. Quiénes somos
 
-SuperFav for Twitch (“SuperFav”, “nosotros”) es una extensión de navegador y un sitio web asociados al proyecto open source [superfav-extension](https://github.com/zLeGnDz3r0/superfav-extension). El sitio de información se encuentra en [superfavtwitch.onrender.com](https://superfavtwitch.onrender.com/).
+SuperFav for Twitch (“SuperFav”, “nosotros”) es una extensión de navegador y un sitio web asociados al proyecto open source [superfav-extension](https://github.com/zLeGnDz3r0/superfav-extension). El sitio de información se encuentra en [superfav.onrender.com](https://superfav.onrender.com/).
 
 ## 2. Finalidad del producto
 
@@ -19,7 +19,7 @@ SuperFav permite marcar canales de Twitch como favoritos (“SuperFavs”), ver 
 - **Lista de SuperFavs:** nombres de usuario (logins) públicos de canales de Twitch que tú marcas. Se guardan en el almacenamiento del navegador (`chrome.storage`).
 - **Preferencias de avisos:** si quieres notificaciones de directo o de cambio de título (globales y por canal). También en el navegador.
 - **Estado técnico local:** por ejemplo, qué canales estaban en directo o qué títulos se detectaron, solo para evitar avisos duplicados.
-- **Peticiones al servidor proxy:** al consultar directos o títulos, la extensión envía a nuestro backend (`superfavtwitch.onrender.com`) únicamente los logins de canales que has marcado, para consultar la API pública de Twitch (Helix). No enviamos tu nombre, email ni historial de navegación.
+- **Peticiones al servidor proxy:** al consultar directos o títulos, la extensión envía a nuestro backend (`superfav.onrender.com`) únicamente los logins de canales que has marcado, para consultar la API pública de Twitch (Helix). No enviamos tu nombre, email ni historial de navegación.
 
 En páginas de Twitch, la extensión solo lee la ruta de la URL del canal para mostrar el botón de diamante e inyectar la interfaz. No recopilamos el contenido de otras webs ni hacemos seguimiento de tu historial.
 

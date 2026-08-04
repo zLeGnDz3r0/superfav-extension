@@ -7,7 +7,7 @@ export default defineConfig({
   plugins: [react(), crx({ manifest })],
   define: {
     __API_BASE__: JSON.stringify(
-      process.env.VITE_API_BASE ?? 'https://superfavtwitch.onrender.com',
+      process.env.VITE_API_BASE ?? 'https://superfav.onrender.com',
     ),
   },
   build: {

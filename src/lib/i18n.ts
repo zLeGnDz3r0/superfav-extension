@@ -61,7 +61,10 @@ export type MessageKey =
   | 'removeSuperFav'
   | 'notifLive'
   | 'notifTitleChange'
-  | 'noTitle';
+  | 'noTitle'
+  | 'choosePlatform'
+  | 'openOnTwitch'
+  | 'openOnKick';
 
 export type Messages = Record<MessageKey, string>;
 
@@ -135,6 +138,9 @@ const es: Messages = {
   notifLive: '{name} está en directo',
   notifTitleChange: '{name} cambió el título',
   noTitle: '(sin título)',
+  choosePlatform: 'Elige plataforma',
+  openOnTwitch: 'Abrir en Twitch',
+  openOnKick: 'Abrir en Kick',
 };
 
 const en: Messages = {
@@ -190,6 +196,9 @@ const en: Messages = {
   notifLive: '{name} is live',
   notifTitleChange: '{name} changed the title',
   noTitle: '(no title)',
+  choosePlatform: 'Choose platform',
+  openOnTwitch: 'Open on Twitch',
+  openOnKick: 'Open on Kick',
 };
 
 const ca: Messages = {
@@ -245,6 +254,9 @@ const ca: Messages = {
   notifLive: '{name} està en directe',
   notifTitleChange: '{name} ha canviat el títol',
   noTitle: '(sense títol)',
+  choosePlatform: 'Tria plataforma',
+  openOnTwitch: 'Obrir a Twitch',
+  openOnKick: 'Obrir a Kick',
 };
 
 const fr: Messages = {
@@ -300,6 +312,9 @@ const fr: Messages = {
   notifLive: '{name} est en direct',
   notifTitleChange: '{name} a changé le titre',
   noTitle: '(sans titre)',
+  choosePlatform: 'Choisir la plateforme',
+  openOnTwitch: 'Ouvrir sur Twitch',
+  openOnKick: 'Ouvrir sur Kick',
 };
 
 const it: Messages = {
@@ -355,6 +370,9 @@ const it: Messages = {
   notifLive: '{name} è in diretta',
   notifTitleChange: '{name} ha cambiato il titolo',
   noTitle: '(senza titolo)',
+  choosePlatform: 'Scegli piattaforma',
+  openOnTwitch: 'Apri su Twitch',
+  openOnKick: 'Apri su Kick',
 };
 
 const de: Messages = {
@@ -410,6 +428,9 @@ const de: Messages = {
   notifLive: '{name} ist live',
   notifTitleChange: '{name} hat den Titel geändert',
   noTitle: '(kein Titel)',
+  choosePlatform: 'Plattform wählen',
+  openOnTwitch: 'Auf Twitch öffnen',
+  openOnKick: 'Auf Kick öffnen',
 };
 
 const tr: Messages = {
@@ -465,6 +486,9 @@ const tr: Messages = {
   notifLive: '{name} canlıda',
   notifTitleChange: '{name} başlığı değiştirdi',
   noTitle: '(başlık yok)',
+  choosePlatform: 'Platform seç',
+  openOnTwitch: 'Twitch’te aç',
+  openOnKick: 'Kick’te aç',
 };
 
 const hi: Messages = {
@@ -520,6 +544,9 @@ const hi: Messages = {
   notifLive: '{name} लाइव है',
   notifTitleChange: '{name} ने शीर्षक बदला',
   noTitle: '(कोई शीर्षक नहीं)',
+  choosePlatform: 'प्लेटफ़ॉर्म चुनें',
+  openOnTwitch: 'Twitch पर खोलें',
+  openOnKick: 'Kick पर खोलें',
 };
 
 const zh: Messages = {
@@ -572,6 +599,9 @@ const zh: Messages = {
   notifLive: '{name} 正在直播',
   notifTitleChange: '{name} 更改了标题',
   noTitle: '（无标题）',
+  choosePlatform: '选择平台',
+  openOnTwitch: '在 Twitch 打开',
+  openOnKick: '在 Kick 打开',
 };
 
 const ja: Messages = {
@@ -627,6 +657,9 @@ const ja: Messages = {
   notifLive: '{name} が配信中',
   notifTitleChange: '{name} がタイトルを変更しました',
   noTitle: '（タイトルなし）',
+  choosePlatform: 'プラットフォームを選択',
+  openOnTwitch: 'Twitch で開く',
+  openOnKick: 'Kick で開く',
 };
 
 const ALL: Record<LocaleId, Messages> = {

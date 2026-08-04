@@ -11,13 +11,13 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Chrome-MV3-4285F4?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Chrome MV3" />
-  <img src="https://img.shields.io/badge/version-1.2.0-9146FF?style=for-the-badge" alt="v1.2.0" />
+  <img src="https://img.shields.io/badge/version-1.2.1-9146FF?style=for-the-badge" alt="v1.2.1" />
   <img src="https://img.shields.io/badge/Twitch%20%2B%20Kick-53FC18?style=for-the-badge" alt="Twitch + Kick" />
   <img src="https://img.shields.io/badge/Gratis-100%25-success?style=for-the-badge" alt="Gratis" />
 </p>
 
 <p align="center">
-  🌐 <a href="https://superfavtwitch.onrender.com/">Web oficial</a>
+  🌐 <a href="https://superfav.onrender.com/">Web oficial</a>
   ·
   🏪 <a href="https://chromewebstore.google.com/detail/kgnhcepaobaiklnggoebppljgobkpckc">Chrome Web Store</a>
 </p>

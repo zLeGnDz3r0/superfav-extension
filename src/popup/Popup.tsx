@@ -57,8 +57,42 @@ interface Stream {
 
 type Status = 'loading' | 'ready' | 'error';
 
+type LiveRow =
+  | { kind: 'single'; stream: Stream }
+  | { kind: 'multi'; login: string; twitch: Stream; kick: Stream };
+
 const formatViewers = (n: number): string =>
   n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}K` : String(n);
+
+function rowViewerCount(row: LiveRow): number {
+  if (row.kind === 'single') return row.stream.viewer_count;
+  return Math.max(row.twitch.viewer_count, row.kick.viewer_count);
+}
+
+function groupLiveRows(streams: Stream[]): LiveRow[] {
+  const byLogin = new Map<string, Stream[]>();
+  for (const s of streams) {
+    const list = byLogin.get(s.user_login) ?? [];
+    list.push(s);
+    byLogin.set(s.user_login, list);
+  }
+
+  const rows: LiveRow[] = [];
+  for (const [login, list] of byLogin) {
+    const twitch = list.find((s) => s.platform === 'twitch');
+    const kick = list.find((s) => s.platform === 'kick');
+    if (twitch && kick) {
+      rows.push({ kind: 'multi', login, twitch, kick });
+      continue;
+    }
+    for (const stream of list) {
+      rows.push({ kind: 'single', stream });
+    }
+  }
+
+  rows.sort((a, b) => rowViewerCount(b) - rowViewerCount(a));
+  return rows;
+}
 
 function BrandMark({ className }: { className?: string }) {
   return (
@@ -85,6 +119,81 @@ function PlatformBadge({ platform }: { platform: Platform }) {
     >
       {isKick ? 'Kick' : 'Twitch'}
     </span>
+  );
+}
+
+function StreamThumb({ stream }: { stream: Stream }) {
+  return (
+    <div className="relative aspect-video w-[76px] shrink-0 overflow-hidden rounded-lg bg-black/40">
+      {stream.thumbnail_url ? (
+        <img
+          src={thumbSrc(stream.thumbnail_url, stream.platform)}
+          alt=""
+          loading="lazy"
+          // Kick CDN hotlink-blocks chrome-extension referrers.
+          referrerPolicy="no-referrer"
+          className="h-full w-full object-cover"
+          onError={(e) => {
+            const el = e.currentTarget;
+            const avatar = stream.avatar_url;
+            if (
+              stream.platform === 'kick' &&
+              avatar &&
+              el.dataset.fallback !== '1' &&
+              el.src !== avatar
+            ) {
+              el.dataset.fallback = '1';
+              el.src = avatar;
+              return;
+            }
+            el.style.display = 'none';
+            const fallback = el.nextElementSibling;
+            if (fallback instanceof HTMLElement) fallback.hidden = false;
+          }}
+        />
+      ) : null}
+      <div
+        hidden={Boolean(stream.thumbnail_url || stream.avatar_url)}
+        className="flex h-full w-full items-center justify-center text-[10px] text-sf-muted"
+      >
+        LIVE
+      </div>
+      <span className="absolute left-1 top-1 rounded bg-red-600 px-1 py-px text-[9px] font-bold uppercase leading-none tracking-wide text-white">
+        Live
+      </span>
+    </div>
+  );
+}
+
+function StreamMeta({
+  stream,
+  locale,
+  platforms,
+}: {
+  stream: Stream;
+  locale: LocaleId;
+  platforms?: Platform[];
+}) {
+  const badges = platforms ?? [stream.platform];
+  return (
+    <div className="min-w-0 flex-1">
+      <div className="mb-0.5 flex min-w-0 items-center gap-1.5">
+        <h3 className="min-w-0 truncate text-sm font-semibold">{stream.user_name}</h3>
+        <span className="flex shrink-0 items-center gap-1">
+          {badges.map((platform) => (
+            <PlatformBadge key={platform} platform={platform} />
+          ))}
+        </span>
+      </div>
+      <p
+        className={`truncate text-xs ${
+          stream.platform === 'kick' ? 'text-sf-kick' : 'text-sf-accent'
+        }`}
+      >
+        {stream.game_name || t(locale, 'noCategory')}
+      </p>
+      <p className="truncate text-xs text-sf-muted">{stream.title}</p>
+    </div>
   );
 }
 
@@ -277,6 +386,9 @@ export default function Popup() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [prefHint, setPrefHint] = useState<string | null>(null);
   const [locale, setLocale] = useState<LocaleId>('es');
+  const [pickerLogin, setPickerLogin] = useState<string | null>(null);
+
+  const liveRows = useMemo(() => groupLiveRows(streams), [streams]);
 
   useEffect(() => {
     void loadStoredLocale().then(setLocale);
@@ -420,10 +532,23 @@ export default function Popup() {
   );
 
   const openStream = (stream: Stream) => {
+    setPickerLogin(null);
     const url = channelUrl(stream.platform, stream.user_login);
     if (chrome.tabs?.create) chrome.tabs.create({ url });
     else window.open(url, '_blank');
   };
+
+  useEffect(() => {
+    if (!pickerLogin) return;
+    const onPointerDown = (e: PointerEvent) => {
+      const target = e.target;
+      if (!(target instanceof Element)) return;
+      if (target.closest('[data-sf-picker]')) return;
+      setPickerLogin(null);
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    return () => document.removeEventListener('pointerdown', onPointerDown);
+  }, [pickerLogin]);
 
   return (
     <div className="sf-popup-shell w-[360px]">
@@ -444,6 +569,7 @@ export default function Popup() {
               onClick={() => {
                 setSettingsOpen((open) => !open);
                 setPrefHint(null);
+                setPickerLogin(null);
               }}
               aria-label={settingsOpen ? t(locale, 'gearBack') : t(locale, 'gearManage')}
               aria-expanded={settingsOpen}
@@ -470,10 +596,10 @@ export default function Popup() {
                 />
               </button>
             )}
-            {!settingsOpen && status === 'ready' && streams.length > 0 && (
+            {!settingsOpen && status === 'ready' && liveRows.length > 0 && (
               <span className="flex items-center gap-1.5 rounded-full bg-white/[0.06] px-2 py-1 text-xs font-medium text-sf-muted">
                 <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-red-500" />
-                {t(locale, 'liveCount', { n: streams.length })}
+                {t(locale, 'liveCount', { n: liveRows.length })}
               </span>
             )}
           </div>
@@ -527,76 +653,103 @@ export default function Popup() {
               {status === 'ready' && streams.length === 0 && (
                 <EmptyState locale={locale} hasFavs={hasFavs} />
               )}
-              {status === 'ready' && streams.length > 0 && (
+              {status === 'ready' && liveRows.length > 0 && (
                 <ul className="flex flex-col gap-2">
-                  {streams.map((s, i) => (
-                    <li key={`${s.platform}:${s.id}:${s.user_login}`}>
-                      <button
-                        onClick={() => openStream(s)}
-                        style={{ animationDelay: `${i * 45}ms` }}
-                        className="sf-card flex w-full items-center gap-3 rounded-xl bg-sf-surface p-2.5 text-left transition-colors hover:bg-sf-surface2"
-                      >
-                        <div className="relative aspect-video w-[76px] shrink-0 overflow-hidden rounded-lg bg-black/40">
-                          {s.thumbnail_url ? (
-                            <img
-                              src={thumbSrc(s.thumbnail_url, s.platform)}
-                              alt=""
-                              loading="lazy"
-                              // Kick CDN hotlink-blocks chrome-extension referrers.
-                              referrerPolicy="no-referrer"
-                              className="h-full w-full object-cover"
-                              onError={(e) => {
-                                const el = e.currentTarget;
-                                const avatar = s.avatar_url;
-                                if (
-                                  s.platform === 'kick' &&
-                                  avatar &&
-                                  el.dataset.fallback !== '1' &&
-                                  el.src !== avatar
-                                ) {
-                                  el.dataset.fallback = '1';
-                                  el.src = avatar;
-                                  return;
-                                }
-                                el.style.display = 'none';
-                                const fallback = el.nextElementSibling;
-                                if (fallback instanceof HTMLElement) fallback.hidden = false;
-                              }}
+                  {liveRows.map((row, i) => {
+                    if (row.kind === 'single') {
+                      const s = row.stream;
+                      return (
+                        <li key={`${s.platform}:${s.id}:${s.user_login}`}>
+                          <button
+                            type="button"
+                            onClick={() => openStream(s)}
+                            style={{ animationDelay: `${i * 45}ms` }}
+                            className="sf-card flex w-full items-center gap-3 rounded-xl bg-sf-surface p-2.5 text-left transition-colors hover:bg-sf-surface2"
+                          >
+                            <StreamThumb stream={s} />
+                            <StreamMeta stream={s} locale={locale} />
+                            <span className="flex shrink-0 items-center gap-1 self-start pt-0.5 text-xs font-semibold">
+                              <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
+                              {formatViewers(s.viewer_count)}
+                            </span>
+                          </button>
+                        </li>
+                      );
+                    }
+
+                    const primary =
+                      row.twitch.viewer_count >= row.kick.viewer_count
+                        ? row.twitch
+                        : row.kick;
+                    const displayName = row.twitch.user_name || row.kick.user_name;
+                    const pickerOpen = pickerLogin === row.login;
+
+                    return (
+                      <li key={`multi:${row.login}`} data-sf-picker={row.login}>
+                        <div
+                          style={{ animationDelay: `${i * 45}ms` }}
+                          className="sf-card overflow-hidden rounded-xl bg-sf-surface transition-colors"
+                        >
+                          <button
+                            type="button"
+                            aria-expanded={pickerOpen}
+                            aria-label={`${displayName}. ${t(locale, 'choosePlatform')}`}
+                            onClick={() =>
+                              setPickerLogin((cur) =>
+                                cur === row.login ? null : row.login,
+                              )
+                            }
+                            className="flex w-full items-center gap-3 p-2.5 text-left transition-colors hover:bg-sf-surface2"
+                          >
+                            <StreamThumb stream={primary} />
+                            <StreamMeta
+                              stream={{ ...primary, user_name: displayName }}
+                              locale={locale}
+                              platforms={['twitch', 'kick']}
                             />
-                          ) : null}
-                          <div
-                            hidden={Boolean(s.thumbnail_url || s.avatar_url)}
-                            className="flex h-full w-full items-center justify-center text-[10px] text-sf-muted"
-                          >
-                            LIVE
-                          </div>
-                          <span className="absolute left-1 top-1 rounded bg-red-600 px-1 py-px text-[9px] font-bold uppercase leading-none tracking-wide text-white">
-                            Live
-                          </span>
-                          <span className="absolute bottom-1 right-1">
-                            <PlatformBadge platform={s.platform} />
-                          </span>
+                            <span className="flex shrink-0 items-center gap-1 self-start pt-0.5 text-xs font-semibold">
+                              <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
+                              {formatViewers(rowViewerCount(row))}
+                            </span>
+                          </button>
+                          {pickerOpen && (
+                            <div className="flex gap-2 border-t border-white/[0.06] px-2.5 pb-2.5 pt-2">
+                              <button
+                                type="button"
+                                onClick={() => openStream(row.twitch)}
+                                className="flex flex-1 flex-col items-start gap-0.5 rounded-lg bg-sf-accent/15 px-2.5 py-2 text-left transition-colors hover:bg-sf-accent/25"
+                              >
+                                <span className="text-[10px] font-bold uppercase tracking-wide text-sf-accent">
+                                  Twitch
+                                </span>
+                                <span className="text-xs font-semibold text-sf-text">
+                                  {formatViewers(row.twitch.viewer_count)}
+                                </span>
+                                <span className="text-[10px] text-sf-muted">
+                                  {t(locale, 'openOnTwitch')}
+                                </span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => openStream(row.kick)}
+                                className="flex flex-1 flex-col items-start gap-0.5 rounded-lg bg-sf-kick/15 px-2.5 py-2 text-left transition-colors hover:bg-sf-kick/25"
+                              >
+                                <span className="text-[10px] font-bold uppercase tracking-wide text-sf-kick">
+                                  Kick
+                                </span>
+                                <span className="text-xs font-semibold text-sf-text">
+                                  {formatViewers(row.kick.viewer_count)}
+                                </span>
+                                <span className="text-[10px] text-sf-muted">
+                                  {t(locale, 'openOnKick')}
+                                </span>
+                              </button>
+                            </div>
+                          )}
                         </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="mb-0.5 flex items-center gap-1.5">
-                            <h3 className="truncate text-sm font-semibold">{s.user_name}</h3>
-                          </div>
-                          <p
-                            className={`truncate text-xs ${
-                              s.platform === 'kick' ? 'text-sf-kick' : 'text-sf-accent'
-                            }`}
-                          >
-                            {s.game_name || t(locale, 'noCategory')}
-                          </p>
-                          <p className="truncate text-xs text-sf-muted">{s.title}</p>
-                        </div>
-                        <span className="flex shrink-0 items-center gap-1 self-start pt-0.5 text-xs font-semibold">
-                          <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
-                          {formatViewers(s.viewer_count)}
-                        </span>
-                      </button>
-                    </li>
-                  ))}
+                      </li>
+                    );
+                  })}
                 </ul>
               )}
             </>
