@@ -1,5 +1,12 @@
 // src/popup/Popup.tsx
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { createPortal } from 'react-dom';
 import {
   FAVS_KEY,
@@ -168,44 +175,77 @@ function StreamThumb({ stream }: { stream: Stream }) {
 
 /** Full stream title on hover when the line is truncated (native `title` is unreliable inside popup buttons). */
 function TruncatedTitle({ text }: { text: string }) {
-  const ref = useRef<HTMLParagraphElement>(null);
-  const [tip, setTip] = useState<{ left: number; top: number } | null>(null);
+  const titleRef = useRef<HTMLParagraphElement>(null);
+  const tipRef = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
 
-  const hide = useCallback(() => setTip(null), []);
+  const hide = useCallback(() => {
+    setOpen(false);
+    setPos(null);
+  }, []);
 
-  const showIfTruncated = useCallback((e: React.MouseEvent<HTMLParagraphElement>) => {
-    const el = ref.current;
+  const showIfTruncated = useCallback(() => {
+    const el = titleRef.current;
     if (!el || !text) return;
     if (el.scrollWidth <= el.clientWidth + 1) return;
-    const maxW = Math.min(320, window.innerWidth - 16);
-    let left = e.clientX - maxW / 2;
-    if (left < 8) left = 8;
-    if (left + maxW > window.innerWidth - 8) left = Math.max(8, window.innerWidth - maxW - 8);
-    // Prefer above the cursor; only flip below if there is no room at the top.
-    const tipH = 56;
-    let top = e.clientY - tipH - 10;
-    if (top < 8) top = e.clientY + 14;
-    setTip({ left, top });
+    setOpen(true);
   }, [text]);
+
+  useLayoutEffect(() => {
+    if (!open || !titleRef.current || !tipRef.current) return;
+    const titleR = titleRef.current.getBoundingClientRect();
+    const tipEl = tipRef.current;
+    const tipH = tipEl.offsetHeight;
+    const tipW = tipEl.offsetWidth;
+    const gap = 8;
+    const pad = 8;
+
+    // Prefer above the title line so the truncated text stays visible.
+    let top = titleR.top - tipH - gap;
+    if (top < pad) {
+      top = titleR.bottom + gap;
+    }
+    // Never overlap the title vertically.
+    if (top < titleR.bottom && top + tipH > titleR.top) {
+      top = titleR.bottom + gap;
+      if (top + tipH > window.innerHeight - pad) {
+        top = Math.max(pad, titleR.top - tipH - gap);
+      }
+    }
+
+    let left = titleR.left;
+    if (left + tipW > window.innerWidth - pad) {
+      left = Math.max(pad, window.innerWidth - tipW - pad);
+    }
+    if (left < pad) left = pad;
+
+    setPos({ left, top });
+  }, [open, text]);
 
   if (!text) return null;
 
   return (
     <>
       <p
-        ref={ref}
+        ref={titleRef}
         className="truncate text-xs text-sf-muted"
         onMouseEnter={showIfTruncated}
         onMouseLeave={hide}
       >
         {text}
       </p>
-      {tip
+      {open
         ? createPortal(
             <div
+              ref={tipRef}
               role="tooltip"
               className="sf-title-tooltip"
-              style={{ left: tip.left, top: tip.top }}
+              style={{
+                left: pos?.left ?? 0,
+                top: pos?.top ?? 0,
+                visibility: pos ? 'visible' : 'hidden',
+              }}
             >
               {text}
             </div>,
