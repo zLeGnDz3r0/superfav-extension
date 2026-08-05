@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "SuperFav",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "description": "Marca tus streamers favoritos en Twitch y Kick y míralos en directo desde un dashboard minimalista.",
   "permissions": ["storage", "alarms", "notifications", "offscreen"],
   "background": {
