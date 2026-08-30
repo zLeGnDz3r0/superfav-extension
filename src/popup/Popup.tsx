@@ -133,6 +133,9 @@ function PlatformBadge({ platform }: { platform: Platform }) {
 
 const PREVIEW_MUTED_KEY = 'preview_muted';
 const HOVER_DELAY_MS = 300;
+const LEAVE_GRACE_MS = 160;
+/** Live preview float size vs thumbnail (~3×). */
+const PREVIEW_SCALE = 3;
 
 let activePreviewKey: string | null = null;
 const previewListeners = new Set<(key: string | null) => void>();
@@ -156,14 +159,32 @@ function useIsActivePreview(key: string): boolean {
   return active;
 }
 
+/** Hosted proxy page — Twitch rejects chrome-extension:// as parent. */
 function previewEmbedUrl(stream: Stream, muted: boolean): string {
-  if (stream.platform === 'twitch') {
-    const parent = encodeURIComponent(chrome.runtime.id);
-    const login = encodeURIComponent(stream.user_login);
-    return `https://player.twitch.tv/?channel=${login}&parent=${parent}&autoplay=true&muted=${muted ? 'true' : 'false'}`;
-  }
-  const login = encodeURIComponent(stream.user_login);
-  return `https://player.kick.com/${login}?autoplay=true&muted=${muted ? '1' : '0'}`;
+  const qs = new URLSearchParams({
+    platform: stream.platform,
+    login: stream.user_login,
+    muted: muted ? '1' : '0',
+  });
+  return `${API_BASE}/preview?${qs.toString()}`;
+}
+
+function clampPreviewPos(
+  thumb: DOMRect,
+  width: number,
+  height: number,
+): { left: number; top: number } {
+  const gap = 8;
+  const pad = 8;
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  let left = thumb.right + gap;
+  if (left + width > vw - pad) left = thumb.left - gap - width;
+  if (left < pad) left = Math.max(pad, (vw - width) / 2);
+  let top = thumb.top + (thumb.height - height) / 2;
+  if (top < pad) top = pad;
+  if (top + height > vh - pad) top = Math.max(pad, vh - pad - height);
+  return { left: Math.round(left), top: Math.round(top) };
 }
 
 function PlayHintIcon() {
@@ -196,6 +217,10 @@ function StreamThumb({ stream, locale }: { stream: Stream; locale: LocaleId }) {
   const isPreview = useIsActivePreview(previewKey);
   const [muted, setMuted] = useState(true);
   const [hovering, setHovering] = useState(false);
+  const [panelPos, setPanelPos] = useState<{ left: number; top: number; width: number; height: number } | null>(
+    null,
+  );
+  const wrapRef = useRef<HTMLDivElement>(null);
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -215,6 +240,7 @@ function StreamThumb({ stream, locale }: { stream: Stream; locale: LocaleId }) {
   const onEnter = useCallback(() => {
     setHovering(true);
     clearHoverTimer();
+    if (activePreviewKey === previewKey) return;
     hoverTimer.current = setTimeout(() => {
       setActivePreview(previewKey);
     }, HOVER_DELAY_MS);
@@ -223,100 +249,137 @@ function StreamThumb({ stream, locale }: { stream: Stream; locale: LocaleId }) {
   const onLeave = useCallback(() => {
     setHovering(false);
     clearHoverTimer();
-    if (activePreviewKey === previewKey) setActivePreview(null);
+    hoverTimer.current = setTimeout(() => {
+      if (activePreviewKey === previewKey) setActivePreview(null);
+    }, LEAVE_GRACE_MS);
   }, [clearHoverTimer, previewKey]);
 
   useEffect(() => () => clearHoverTimer(), [clearHoverTimer]);
 
-  const toggleMute = useCallback(
-    (e: ReactMouseEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      setMuted((prev) => {
-        const next = !prev;
-        void chrome.storage.local.set({ [PREVIEW_MUTED_KEY]: next });
-        return next;
-      });
-    },
-    [],
-  );
+  useLayoutEffect(() => {
+    if (!isPreview || !wrapRef.current) {
+      setPanelPos(null);
+      document.documentElement.classList.remove('sf-preview-open');
+      return;
+    }
+    // Chrome sizes the action popup from document flow — expand so the float isn't clipped.
+    document.documentElement.classList.add('sf-preview-open');
+    const place = () => {
+      const el = wrapRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      const width = Math.round(r.width * PREVIEW_SCALE);
+      const height = Math.round(r.height * PREVIEW_SCALE);
+      const { left, top } = clampPreviewPos(r, width, height);
+      setPanelPos({ left, top, width, height });
+    };
+    place();
+    window.addEventListener('resize', place);
+    return () => {
+      window.removeEventListener('resize', place);
+      document.documentElement.classList.remove('sf-preview-open');
+    };
+  }, [isPreview]);
+
+  const toggleMute = useCallback((e: ReactMouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setMuted((prev) => {
+      const next = !prev;
+      void chrome.storage.local.set({ [PREVIEW_MUTED_KEY]: next });
+      return next;
+    });
+  }, []);
 
   const hint = t(locale, 'thumbPreviewHint');
   const muteLabel = muted ? t(locale, 'previewUnmute') : t(locale, 'previewMute');
-  const showControls = hovering || isPreview;
+  const showHint = hovering && !isPreview;
 
   return (
-    <div
-      className="sf-thumb relative aspect-video w-[76px] shrink-0 overflow-hidden rounded-lg bg-black/40"
-      title={hint}
-      aria-label={hint}
-      onMouseEnter={onEnter}
-      onMouseLeave={onLeave}
-    >
-      {stream.thumbnail_url ? (
-        <img
-          src={thumbSrc(stream.thumbnail_url, stream.platform)}
-          alt=""
-          loading="lazy"
-          // Kick CDN hotlink-blocks chrome-extension referrers.
-          referrerPolicy="no-referrer"
-          className={`h-full w-full object-cover transition-opacity ${isPreview ? 'opacity-0' : 'opacity-100'}`}
-          onError={(e) => {
-            const el = e.currentTarget;
-            const avatar = stream.avatar_url;
-            if (
-              stream.platform === 'kick' &&
-              avatar &&
-              el.dataset.fallback !== '1' &&
-              el.src !== avatar
-            ) {
-              el.dataset.fallback = '1';
-              el.src = avatar;
-              return;
-            }
-            el.style.display = 'none';
-            const fallback = el.nextElementSibling;
-            if (fallback instanceof HTMLElement) fallback.hidden = false;
-          }}
-        />
-      ) : null}
+    <>
       <div
-        hidden={Boolean(stream.thumbnail_url || stream.avatar_url)}
-        className="flex h-full w-full items-center justify-center text-[10px] text-sf-muted"
+        ref={wrapRef}
+        className="sf-thumb relative aspect-video w-[76px] shrink-0 overflow-hidden rounded-lg bg-black/40"
+        title={hint}
+        aria-label={hint}
+        onMouseEnter={onEnter}
+        onMouseLeave={onLeave}
       >
-        LIVE
-      </div>
-      {isPreview ? (
-        <iframe
-          key={`${previewKey}:${muted ? 'm' : 'u'}`}
-          className="sf-thumb-iframe absolute inset-0 h-full w-full border-0"
-          src={previewEmbedUrl(stream, muted)}
-          title={hint}
-          allow="autoplay; encrypted-media; picture-in-picture"
-          sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"
-        />
-      ) : null}
-      {!isPreview && (
-        <span className={`sf-thumb-play ${showControls ? 'is-visible' : ''}`} aria-hidden>
+        {stream.thumbnail_url ? (
+          <img
+            src={thumbSrc(stream.thumbnail_url, stream.platform)}
+            alt=""
+            loading="lazy"
+            // Kick CDN hotlink-blocks chrome-extension referrers.
+            referrerPolicy="no-referrer"
+            className="h-full w-full object-cover"
+            onError={(e) => {
+              const el = e.currentTarget;
+              const avatar = stream.avatar_url;
+              if (
+                stream.platform === 'kick' &&
+                avatar &&
+                el.dataset.fallback !== '1' &&
+                el.src !== avatar
+              ) {
+                el.dataset.fallback = '1';
+                el.src = avatar;
+                return;
+              }
+              el.style.display = 'none';
+              const fallback = el.nextElementSibling;
+              if (fallback instanceof HTMLElement) fallback.hidden = false;
+            }}
+          />
+        ) : null}
+        <div
+          hidden={Boolean(stream.thumbnail_url || stream.avatar_url)}
+          className="flex h-full w-full items-center justify-center text-[10px] text-sf-muted"
+        >
+          LIVE
+        </div>
+        <span className={`sf-thumb-play ${showHint ? 'is-visible' : ''}`} aria-hidden>
           <PlayHintIcon />
         </span>
-      )}
-      <span className="absolute left-1 top-1 rounded bg-red-600 px-1 py-px text-[9px] font-bold uppercase leading-none tracking-wide text-white">
-        Live
-      </span>
-      {showControls && (
-        <button
-          type="button"
-          className="sf-thumb-mute"
-          aria-label={muteLabel}
-          title={muteLabel}
-          onClick={toggleMute}
-          onMouseDown={(e) => e.stopPropagation()}
-        >
-          <SpeakerIcon muted={muted} />
-        </button>
-      )}
-    </div>
+        <span className="absolute left-1 top-1 rounded bg-red-600 px-1 py-px text-[9px] font-bold uppercase leading-none tracking-wide text-white">
+          Live
+        </span>
+      </div>
+      {isPreview &&
+        panelPos &&
+        createPortal(
+          <div
+            className="sf-thumb-float"
+            style={{
+              left: panelPos.left,
+              top: panelPos.top,
+              width: panelPos.width,
+              height: panelPos.height,
+            }}
+            onMouseEnter={onEnter}
+            onMouseLeave={onLeave}
+          >
+            <iframe
+              key={`${previewKey}:${muted ? 'm' : 'u'}`}
+              className="sf-thumb-float-iframe"
+              src={previewEmbedUrl(stream, muted)}
+              title={hint}
+              allow="autoplay; encrypted-media; picture-in-picture"
+            />
+            <button
+              type="button"
+              className="sf-thumb-mute sf-thumb-mute--float"
+              aria-label={muteLabel}
+              title={muteLabel}
+              onClick={toggleMute}
+              onMouseDown={(e) => e.stopPropagation()}
+            >
+              <SpeakerIcon muted={muted} />
+            </button>
+          </div>,
+          document.body,
+        )}
+    </>
   );
 }
 

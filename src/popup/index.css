@@ -13,6 +13,13 @@ body,
   background: #18181b;
 }
 
+/* Room for ~3× hover preview float (Chrome popup clips overflow otherwise). */
+html.sf-preview-open,
+html.sf-preview-open body {
+  min-width: 420px;
+  min-height: 560px;
+}
+
 body {
   font-family: 'Inter', Roobert, 'Helvetica Neue', Helvetica, Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
@@ -133,11 +140,25 @@ body {
   pointer-events: none;
 }
 
-/* Live hover preview on stream thumbnails */
-.sf-thumb-iframe {
-  pointer-events: none;
-  z-index: 1;
+/* Live hover preview — floats ~3× beside the thumb (portal to body) */
+.sf-thumb-float {
+  position: fixed;
+  z-index: 10000;
+  overflow: hidden;
+  border-radius: 10px;
   background: #000;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.55);
+  animation: sf-float-in 0.16s ease both;
+}
+
+.sf-thumb-float-iframe {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #000;
+  pointer-events: none;
 }
 
 .sf-thumb-play {
@@ -177,12 +198,35 @@ body {
   pointer-events: auto;
 }
 
+.sf-thumb-mute--float {
+  right: 6px;
+  bottom: 6px;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+}
+
 .sf-thumb-mute:hover {
   background: rgba(0, 0, 0, 0.82);
+}
+
+@keyframes sf-float-in {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .sf-thumb-play {
     transition: none;
+  }
+
+  .sf-thumb-float {
+    animation: none;
   }
 }
