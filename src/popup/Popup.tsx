@@ -504,11 +504,29 @@ export default function Popup() {
     setPrefHint(null);
   }, []);
 
-  const syncLiveBadge = useCallback((keys: string[]) => {
-    void chrome.runtime
-      .sendMessage({ type: 'superfav-sync-live', keys })
-      .catch(() => {});
-  }, []);
+  const LIVE_KEY = 'live_keys';
+
+  const syncLiveBadge = useCallback(
+    (keys: string[], ok: { twitch: boolean; kick: boolean }) => {
+      void (async () => {
+        let next = keys;
+        if (!ok.twitch || !ok.kick) {
+          const local = await chrome.storage.local.get(LIVE_KEY);
+          const prev = (local[LIVE_KEY] as string[] | undefined) ?? [];
+          const merged = new Set(keys);
+          for (const k of prev) {
+            if (!ok.twitch && k.startsWith('twitch:')) merged.add(k);
+            if (!ok.kick && k.startsWith('kick:')) merged.add(k);
+          }
+          next = [...merged];
+        }
+        await chrome.runtime
+          .sendMessage({ type: 'superfav-sync-live', keys: next })
+          .catch(() => {});
+      })();
+    },
+    [],
+  );
 
   const load = useCallback(() => {
     setStatus('loading');
@@ -523,7 +541,7 @@ export default function Popup() {
       if (nextFavs.length === 0) {
         setStreams([]);
         setStatus('ready');
-        syncLiveBadge([]);
+        syncLiveBadge([], { twitch: true, kick: true });
         return;
       }
       try {
@@ -533,14 +551,19 @@ export default function Popup() {
         ]);
         const twitch = results[0].status === 'fulfilled' ? results[0].value : [];
         const kick = results[1].status === 'fulfilled' ? results[1].value : [];
-        if (results.every((r) => r.status === 'rejected')) {
+        const twitchOk = results[0].status === 'fulfilled';
+        const kickOk = results[1].status === 'fulfilled';
+        if (!twitchOk && !kickOk) {
           setStatus('error');
           return;
         }
         const live = [...twitch, ...kick].sort((a, b) => b.viewer_count - a.viewer_count);
         setStreams(live);
         setStatus('ready');
-        syncLiveBadge(live.map((s) => favKeyOf({ platform: s.platform, login: s.user_login })));
+        syncLiveBadge(
+          live.map((s) => favKeyOf({ platform: s.platform, login: s.user_login })),
+          { twitch: twitchOk, kick: kickOk },
+        );
       } catch {
         setStatus('error');
       }

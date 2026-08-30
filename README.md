@@ -11,7 +11,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Chrome-MV3-4285F4?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Chrome MV3" />
-  <img src="https://img.shields.io/badge/version-1.2.3-9146FF?style=for-the-badge" alt="v1.2.3" />
+  <img src="https://img.shields.io/badge/version-1.2.4-9146FF?style=for-the-badge" alt="v1.2.4" />
   <img src="https://img.shields.io/badge/Twitch%20%2B%20Kick-53FC18?style=for-the-badge" alt="Twitch + Kick" />
   <img src="https://img.shields.io/badge/Gratis-100%25-success?style=for-the-badge" alt="Gratis" />
 </p>
@@ -40,9 +40,9 @@ Olvídate de revisar manualmente cada canal: el **badge rojo**, el **popup** con
 |---|---------|-------------|
 | 💎 | **Un clic para marcar** | Diamante en cualquier canal de Twitch o Kick. |
 | 🟣🟢 | **Plataforma visible** | Chip Twitch / Kick en el popup y en Mis SuperFavs. |
-| 🔴 | **Badge de directos** | Contador rojo. Poll cada **3 minutos**; sync al abrir el popup. |
+| 🔴 | **Badge de directos** | Contador rojo. Poll cada **1 minuto**; sync al abrir el popup. |
 | 🖥️ | **Avisos en el escritorio** | Toast cuando un favorito empieza a emitir. |
-| 📋 | **Cambio de título** | Detecta cambios cada **30 segundos**. |
+| 📋 | **Cambio de título** | Detecta cambios cada **1 minuto**. |
 | ⚙️ | **Avisos por canal** | Engranaje → Directo / Título por SuperFav + sonido. |
 | 🌍 | **Multi-idioma** | ES, EN, CA, FR, IT, DE, TR, HI, ZH, JA. |
 | 🔐 | **Local y seguro** | Favoritos en `chrome.storage`. |

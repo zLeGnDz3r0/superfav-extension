@@ -42,6 +42,7 @@ const TITLES_KEY = 'channel_titles';
 const NOTIF_MAP_KEY = 'notif_login_map';
 const LIVE_INIT_KEY = 'live_logins_initialized';
 const TITLES_INIT_KEY = 'channel_titles_initialized';
+const LIVE_NOTIF_AT_KEY = 'live_notif_at';
 const LEGACY_REFRESH_ALARM = 'refresh';
 const LIVE_POLL_ALARM = 'live-poll';
 const TITLE_POLL_ALARM = 'title-poll';
@@ -49,7 +50,9 @@ const CLOSE_ALARM_PREFIX = 'close:';
 const LIVE_NOTIF_PREFIX = 'live:';
 const TITLE_NOTIF_PREFIX = 'title:';
 const CLOSE_AFTER_MS = 3 * 60 * 1000;
-const TITLE_POLL_MS = 30 * 1000;
+const LIVE_POLL_MINUTES = 1;
+const FETCH_TIMEOUT_MS = 12_000;
+const LIVE_NOTIF_COOLDOWN_MS = 45 * 60 * 1000;
 
 interface LiveStream {
   platform: Platform;
@@ -71,6 +74,7 @@ type NotifLoginMap = Record<string, string>;
 type TitleMap = Record<string, string>;
 
 let pollInFlight = false;
+let pollQueued = false;
 
 function normalizeTitle(title: string): string {
   return title.trim();
@@ -307,58 +311,109 @@ async function syncLiveState(liveKeys: string[]): Promise<void> {
   });
 }
 
+type FetchResult<T> = { ok: true; data: T[] } | { ok: false };
+
+function fetchTimeout(url: string): Promise<Response> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
+  return fetch(url, { signal: ctrl.signal, cache: 'no-store' }).finally(() =>
+    clearTimeout(timer),
+  );
+}
+
+function platformOfKey(key: string): Platform | null {
+  return parseFavKey(key)?.platform ?? null;
+}
+
+async function markLiveNotified(key: string): Promise<void> {
+  const local = await chrome.storage.local.get(LIVE_NOTIF_AT_KEY);
+  const map = { ...((local[LIVE_NOTIF_AT_KEY] as Record<string, number> | undefined) ?? {}) };
+  map[key] = Date.now();
+  await chrome.storage.local.set({ [LIVE_NOTIF_AT_KEY]: map });
+}
+
+async function pruneLiveNotifAt(offlineKeys: string[]): Promise<void> {
+  if (offlineKeys.length === 0) return;
+  const local = await chrome.storage.local.get(LIVE_NOTIF_AT_KEY);
+  const map = { ...((local[LIVE_NOTIF_AT_KEY] as Record<string, number> | undefined) ?? {}) };
+  let changed = false;
+  for (const key of offlineKeys) {
+    if (map[key] != null) {
+      delete map[key];
+      changed = true;
+    }
+  }
+  if (changed) await chrome.storage.local.set({ [LIVE_NOTIF_AT_KEY]: map });
+}
+
+async function liveNotifOnCooldown(key: string): Promise<boolean> {
+  const local = await chrome.storage.local.get(LIVE_NOTIF_AT_KEY);
+  const map = (local[LIVE_NOTIF_AT_KEY] as Record<string, number> | undefined) ?? {};
+  const at = map[key] ?? 0;
+  return at > 0 && Date.now() - at < LIVE_NOTIF_COOLDOWN_MS;
+}
+
 async function fetchPlatformStreams(
   platform: Platform,
   logins: string[],
-): Promise<LiveStream[]> {
-  if (logins.length === 0) return [];
+): Promise<FetchResult<LiveStream>> {
+  if (logins.length === 0) return { ok: true, data: [] };
   const favSet = new Set(logins);
+
+  const mapRows = (rows: LiveStream[], forced?: Platform): LiveStream[] =>
+    rows
+      .map((s) => ({
+        ...s,
+        platform: forced ?? s.platform ?? platform,
+        user_login: s.user_login.toLowerCase(),
+      }))
+      .filter((s) => favSet.has(s.user_login));
 
   if (platform === 'kick') {
     try {
-      const res = await fetch(
+      const res = await fetchTimeout(
         `${__API_BASE__}/api/kick/streams?users=${logins.join(',')}`,
       );
       if (res.ok) {
         const data = await res.json();
-        return ((data.data ?? []) as LiveStream[])
-          .map((s) => ({
-            ...s,
-            platform: 'kick' as const,
-            user_login: s.user_login.toLowerCase(),
-          }))
-          .filter((s) => favSet.has(s.user_login));
+        const rows = mapRows((data.data ?? []) as LiveStream[], 'kick');
+        if (rows.length > 0) return { ok: true, data: rows };
       }
     } catch {
-      /* fall through */
+      /* fall through to browser Kick fetch */
     }
-    return (await fetchKickStreams(logins)).filter((s) =>
-      favSet.has(s.user_login.toLowerCase()),
-    );
+    try {
+      const rows = (await fetchKickStreams(logins)).filter((s) =>
+        favSet.has(s.user_login.toLowerCase()),
+      );
+      return { ok: true, data: rows };
+    } catch {
+      return { ok: false };
+    }
   }
 
-  const res = await fetch(
-    `${__API_BASE__}/api/streams?users=${logins.join(',')}`,
-  );
-  if (!res.ok) return [];
-  const data = await res.json();
-  return ((data.data ?? []) as LiveStream[])
-    .map((s) => ({
-      ...s,
-      platform: s.platform ?? platform,
-      user_login: s.user_login.toLowerCase(),
-    }))
-    .filter((s) => favSet.has(s.user_login.toLowerCase()));
+  try {
+    const res = await fetchTimeout(
+      `${__API_BASE__}/api/streams?users=${logins.join(',')}`,
+    );
+    if (!res.ok) return { ok: false };
+    const data = await res.json();
+    if (!Array.isArray(data.data)) return { ok: false };
+    return { ok: true, data: mapRows(data.data as LiveStream[]) };
+  } catch {
+    return { ok: false };
+  }
 }
 
 async function fetchPlatformChannels(
   platform: Platform,
   logins: string[],
-): Promise<ChannelInfo[]> {
-  if (logins.length === 0) return [];
+): Promise<FetchResult<ChannelInfo>> {
+  if (logins.length === 0) return { ok: true, data: [] };
+
   if (platform === 'kick') {
     try {
-      const res = await fetch(
+      const res = await fetchTimeout(
         `${__API_BASE__}/api/kick/channels?users=${logins.join(',')}`,
       );
       if (res.ok) {
@@ -368,83 +423,140 @@ async function fetchPlatformChannels(
           platform: 'kick' as const,
           user_login: c.user_login.toLowerCase(),
         }));
-        if (rows.length > 0) return rows;
+        if (rows.length > 0) return { ok: true, data: rows };
       }
     } catch {
       /* fall through */
     }
-    return fetchKickChannels(logins);
+    try {
+      return { ok: true, data: await fetchKickChannels(logins) };
+    } catch {
+      return { ok: false };
+    }
   }
-  const res = await fetch(
-    `${__API_BASE__}/api/channels?users=${logins.join(',')}`,
-  );
-  if (!res.ok) return [];
-  const data = await res.json();
-  return ((data.data ?? []) as ChannelInfo[]).map((c) => ({
-    ...c,
-    platform: c.platform ?? platform,
-    user_login: c.user_login.toLowerCase(),
-  }));
+
+  try {
+    const res = await fetchTimeout(
+      `${__API_BASE__}/api/channels?users=${logins.join(',')}`,
+    );
+    if (!res.ok) return { ok: false };
+    const data = await res.json();
+    if (!Array.isArray(data.data)) return { ok: false };
+    return {
+      ok: true,
+      data: (data.data as ChannelInfo[]).map((c) => ({
+        ...c,
+        platform: c.platform ?? platform,
+        user_login: c.user_login.toLowerCase(),
+      })),
+    };
+  } catch {
+    return { ok: false };
+  }
 }
 
-async function pollStreams(favs: FavEntry[]): Promise<void> {
-  const [twitchStreams, kickStreams] = await Promise.all([
-    fetchPlatformStreams('twitch', loginsForPlatform(favs, 'twitch')),
-    fetchPlatformStreams('kick', loginsForPlatform(favs, 'kick')),
+async function pollStreams(favs: FavEntry[]): Promise<Set<string>> {
+  const justWentLive = new Set<string>();
+  const twitchLogins = loginsForPlatform(favs, 'twitch');
+  const kickLogins = loginsForPlatform(favs, 'kick');
+  const [twitchRes, kickRes] = await Promise.all([
+    fetchPlatformStreams('twitch', twitchLogins),
+    fetchPlatformStreams('kick', kickLogins),
   ]);
-  const streams = [...twitchStreams, ...kickStreams];
-  const favKeySet = new Set(favs.map(favKeyOf));
-  const currentKeys = new Set(streams.map(streamKey));
 
-  const local = await chrome.storage.local.get([LIVE_KEY, LEGACY_LIVE_KEY, LIVE_INIT_KEY, TITLES_KEY]);
-  const previousRaw = (local[LIVE_KEY] as string[] | undefined)
-    ?? ((local[LEGACY_LIVE_KEY] as string[] | undefined) ?? []).map((l) => `twitch:${l}`);
+  const twitchNeeded = twitchLogins.length > 0;
+  const kickNeeded = kickLogins.length > 0;
+  if ((twitchNeeded && !twitchRes.ok) && (kickNeeded && !kickRes.ok)) return justWentLive;
+  if (twitchNeeded && !twitchRes.ok && !kickNeeded) return justWentLive;
+  if (kickNeeded && !kickRes.ok && !twitchNeeded) return justWentLive;
+
+  const twitchStreams = twitchRes.ok ? twitchRes.data : [];
+  const kickStreams = kickRes.ok ? kickRes.data : [];
+  const fetchedStreams = [...twitchStreams, ...kickStreams];
+  const favKeySet = new Set(favs.map(favKeyOf));
+
+  const local = await chrome.storage.local.get([
+    LIVE_KEY,
+    LEGACY_LIVE_KEY,
+    LIVE_INIT_KEY,
+    TITLES_KEY,
+  ]);
+  const previousRaw =
+    (local[LIVE_KEY] as string[] | undefined) ??
+    ((local[LEGACY_LIVE_KEY] as string[] | undefined) ?? []).map((l) => `twitch:${l}`);
   const previousKeys = new Set(previousRaw.map((k) => k.toLowerCase()));
   const previousTitles = (local[TITLES_KEY] as TitleMap | undefined) ?? {};
   const initialized = local[LIVE_INIT_KEY] === true;
   const titleUpdates: TitleMap = { ...previousTitles };
 
+  const nextKeys = new Set<string>();
+  for (const key of previousKeys) {
+    const plat = platformOfKey(key);
+    if (plat === 'twitch' && !twitchRes.ok) nextKeys.add(key);
+    if (plat === 'kick' && !kickRes.ok) nextKeys.add(key);
+  }
+  for (const stream of fetchedStreams) nextKeys.add(streamKey(stream));
+
   if (initialized) {
-    for (const stream of streams) {
+    for (const stream of fetchedStreams) {
       const key = streamKey(stream);
-      if (!previousKeys.has(key)) {
-        await notifyLive(stream);
-
-        if (titlesDiffer(previousTitles[key], stream.title ?? '')) {
-          await notifyTitleChange({
-            platform: stream.platform,
-            user_login: stream.user_login,
-            user_name: stream.user_name,
-            title: stream.title ?? '',
-            game_name: stream.game_name,
-          });
-        }
-
+      if (previousKeys.has(key)) {
         titleUpdates[key] = stream.title ?? '';
+        continue;
       }
+      if (await liveNotifOnCooldown(key)) {
+        titleUpdates[key] = stream.title ?? '';
+        continue;
+      }
+      await notifyLive(stream);
+      await markLiveNotified(key);
+      justWentLive.add(key);
+      titleUpdates[key] = stream.title ?? '';
     }
   } else {
-    for (const stream of streams) {
+    for (const stream of fetchedStreams) {
       titleUpdates[streamKey(stream)] = stream.title ?? '';
     }
   }
+
+  const confirmedOffline: string[] = [];
+  for (const key of previousKeys) {
+    if (nextKeys.has(key)) continue;
+    const plat = platformOfKey(key);
+    if (plat === 'twitch' && twitchRes.ok) confirmedOffline.push(key);
+    if (plat === 'kick' && kickRes.ok) confirmedOffline.push(key);
+  }
+  await pruneLiveNotifAt(confirmedOffline);
 
   for (const key of Object.keys(titleUpdates)) {
     if (!favKeySet.has(key)) delete titleUpdates[key];
   }
 
-  await syncLiveState([...currentKeys]);
+  await syncLiveState([...nextKeys]);
   await chrome.storage.local.set({
     [TITLES_KEY]: titleUpdates,
   });
+  return justWentLive;
 }
 
-async function pollTitles(favs: FavEntry[]): Promise<void> {
-  const [twitchChannels, kickChannels] = await Promise.all([
-    fetchPlatformChannels('twitch', loginsForPlatform(favs, 'twitch')),
-    fetchPlatformChannels('kick', loginsForPlatform(favs, 'kick')),
+async function pollTitles(favs: FavEntry[], skipKeys: Set<string>): Promise<void> {
+  const twitchLogins = loginsForPlatform(favs, 'twitch');
+  const kickLogins = loginsForPlatform(favs, 'kick');
+  const [twitchRes, kickRes] = await Promise.all([
+    fetchPlatformChannels('twitch', twitchLogins),
+    fetchPlatformChannels('kick', kickLogins),
   ]);
-  const channels = [...twitchChannels, ...kickChannels];
+
+  const twitchNeeded = twitchLogins.length > 0;
+  const kickNeeded = kickLogins.length > 0;
+  if ((twitchNeeded && !twitchRes.ok) && (kickNeeded && !kickRes.ok)) return;
+  if (twitchNeeded && !twitchRes.ok && !kickNeeded) return;
+  if (kickNeeded && !kickRes.ok && !twitchNeeded) return;
+
+  const channels = [
+    ...(twitchRes.ok ? twitchRes.data : []),
+    ...(kickRes.ok ? kickRes.data : []),
+  ];
   const favKeySet = new Set(favs.map(favKeyOf));
 
   const local = await chrome.storage.local.get([TITLES_KEY, TITLES_INIT_KEY]);
@@ -461,12 +573,15 @@ async function pollTitles(favs: FavEntry[]): Promise<void> {
     const newTitle = channel.title ?? '';
     const oldTitle = previousTitles[key] ?? previousTitles[channel.user_login];
 
-    if (initialized && titlesDiffer(oldTitle, newTitle)) {
+    if (
+      initialized &&
+      !skipKeys.has(key) &&
+      titlesDiffer(oldTitle, newTitle)
+    ) {
       await notifyTitleChange(channel);
     }
 
     nextTitles[key] = newTitle;
-    // Drop legacy bare-login title keys after migration
     if (previousTitles[channel.user_login] !== undefined) {
       delete nextTitles[channel.user_login];
     }
@@ -478,45 +593,11 @@ async function pollTitles(favs: FavEntry[]): Promise<void> {
   });
 }
 
-async function pollLiveOnly(): Promise<void> {
-  if (pollInFlight) return;
-  pollInFlight = true;
-  try {
-    const favs = await getFavs();
-    if (favs.length === 0) {
-      await syncLiveState([]);
-      return;
-    }
-    await pollStreams(favs);
-  } catch {
-    // Sin red: conservar estado previo.
-  } finally {
-    pollInFlight = false;
-  }
-}
-
-async function pollTitlesOnly(): Promise<void> {
-  if (pollInFlight) return;
-  pollInFlight = true;
-  try {
-    const favs = await getFavs();
-    if (favs.length === 0) {
-      await chrome.storage.local.set({
-        [TITLES_KEY]: {},
-        [TITLES_INIT_KEY]: true,
-      });
-      return;
-    }
-    await pollTitles(favs);
-  } catch {
-    // Sin red: conservar estado previo.
-  } finally {
-    pollInFlight = false;
-  }
-}
-
 async function poll(): Promise<void> {
-  if (pollInFlight) return;
+  if (pollInFlight) {
+    pollQueued = true;
+    return;
+  }
   pollInFlight = true;
   try {
     const favs = await getFavs();
@@ -530,27 +611,24 @@ async function poll(): Promise<void> {
       return;
     }
 
-    await pollStreams(favs);
-    await pollTitles(favs);
+    const justWentLive = await pollStreams(favs);
+    await pollTitles(favs, justWentLive);
   } catch {
     // Sin red: conservar estado previo.
   } finally {
     pollInFlight = false;
+    if (pollQueued) {
+      pollQueued = false;
+      void poll();
+    }
   }
-}
-
-function scheduleTitlePoll(): void {
-  void chrome.alarms.create(TITLE_POLL_ALARM, {
-    when: Date.now() + TITLE_POLL_MS,
-  });
 }
 
 async function schedulePollAlarms(): Promise<void> {
   await chrome.alarms.clear(LEGACY_REFRESH_ALARM);
-  await chrome.alarms.clear(LIVE_POLL_ALARM);
   await chrome.alarms.clear(TITLE_POLL_ALARM);
-  await chrome.alarms.create(LIVE_POLL_ALARM, { periodInMinutes: 3 });
-  scheduleTitlePoll();
+  await chrome.alarms.clear(LIVE_POLL_ALARM);
+  await chrome.alarms.create(LIVE_POLL_ALARM, { periodInMinutes: LIVE_POLL_MINUTES });
 }
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -566,13 +644,8 @@ chrome.runtime.onStartup.addListener(() => {
 });
 
 chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === LIVE_POLL_ALARM) {
-    void pollLiveOnly();
-    return;
-  }
-  if (alarm.name === TITLE_POLL_ALARM) {
-    void pollTitlesOnly();
-    scheduleTitlePoll();
+  if (alarm.name === LIVE_POLL_ALARM || alarm.name === TITLE_POLL_ALARM) {
+    void poll();
     return;
   }
   const notifId = notifIdFromCloseAlarm(alarm.name);
