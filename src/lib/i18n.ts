@@ -64,7 +64,10 @@ export type MessageKey =
   | 'noTitle'
   | 'choosePlatform'
   | 'openOnTwitch'
-  | 'openOnKick';
+  | 'openOnKick'
+  | 'thumbPreviewHint'
+  | 'previewMute'
+  | 'previewUnmute';
 
 export type Messages = Record<MessageKey, string>;
 
@@ -141,6 +144,10 @@ const es: Messages = {
   choosePlatform: 'Elige plataforma',
   openOnTwitch: 'Abrir en Twitch',
   openOnKick: 'Abrir en Kick',
+  thumbPreviewHint:
+    'Pasa el ratón para ver el directo. Clic en el altavoz para el sonido.',
+  previewMute: 'Silenciar preview',
+  previewUnmute: 'Activar sonido del preview',
 };
 
 const en: Messages = {
@@ -199,6 +206,9 @@ const en: Messages = {
   choosePlatform: 'Choose platform',
   openOnTwitch: 'Open on Twitch',
   openOnKick: 'Open on Kick',
+  thumbPreviewHint: 'Hover to watch the live preview. Click the speaker for sound.',
+  previewMute: 'Mute preview',
+  previewUnmute: 'Unmute preview',
 };
 
 const ca: Messages = {
@@ -257,6 +267,10 @@ const ca: Messages = {
   choosePlatform: 'Tria plataforma',
   openOnTwitch: 'Obrir a Twitch',
   openOnKick: 'Obrir a Kick',
+  thumbPreviewHint:
+    'Passa el ratolí per veure el directe. Clic a l’altaveu per al so.',
+  previewMute: 'Silenciar preview',
+  previewUnmute: 'Activar so del preview',
 };
 
 const fr: Messages = {
@@ -315,6 +329,10 @@ const fr: Messages = {
   choosePlatform: 'Choisir la plateforme',
   openOnTwitch: 'Ouvrir sur Twitch',
   openOnKick: 'Ouvrir sur Kick',
+  thumbPreviewHint:
+    'Survolez pour voir le direct. Cliquez sur le haut-parleur pour le son.',
+  previewMute: 'Couper le son du preview',
+  previewUnmute: 'Activer le son du preview',
 };
 
 const it: Messages = {
@@ -373,6 +391,10 @@ const it: Messages = {
   choosePlatform: 'Scegli piattaforma',
   openOnTwitch: 'Apri su Twitch',
   openOnKick: 'Apri su Kick',
+  thumbPreviewHint:
+    'Passa il mouse per vedere la diretta. Clic sull’altoparlante per l’audio.',
+  previewMute: 'Disattiva audio preview',
+  previewUnmute: 'Attiva audio preview',
 };
 
 const de: Messages = {
@@ -431,6 +453,10 @@ const de: Messages = {
   choosePlatform: 'Plattform wählen',
   openOnTwitch: 'Auf Twitch öffnen',
   openOnKick: 'Auf Kick öffnen',
+  thumbPreviewHint:
+    'Maus darüber für Live-Vorschau. Lautsprecher für Ton.',
+  previewMute: 'Vorschau stummschalten',
+  previewUnmute: 'Vorschau-Ton einschalten',
 };
 
 const tr: Messages = {
@@ -489,6 +515,10 @@ const tr: Messages = {
   choosePlatform: 'Platform seç',
   openOnTwitch: 'Twitch’te aç',
   openOnKick: 'Kick’te aç',
+  thumbPreviewHint:
+    'Canlı önizleme için üzerine gel. Ses için hoparlöre tıkla.',
+  previewMute: 'Önizlemeyi sessize al',
+  previewUnmute: 'Önizleme sesini aç',
 };
 
 const hi: Messages = {
@@ -547,6 +577,10 @@ const hi: Messages = {
   choosePlatform: 'प्लेटफ़ॉर्म चुनें',
   openOnTwitch: 'Twitch पर खोलें',
   openOnKick: 'Kick पर खोलें',
+  thumbPreviewHint:
+    'लाइव प्रीव्यू के लिए होवर करें। आवाज़ के लिए स्पीकर पर क्लिक करें।',
+  previewMute: 'प्रीव्यू म्यूट करें',
+  previewUnmute: 'प्रीव्यू अनम्यूट करें',
 };
 
 const zh: Messages = {
@@ -602,6 +636,9 @@ const zh: Messages = {
   choosePlatform: '选择平台',
   openOnTwitch: '在 Twitch 打开',
   openOnKick: '在 Kick 打开',
+  thumbPreviewHint: '悬停查看直播预览。点击喇叭开启声音。',
+  previewMute: '静音预览',
+  previewUnmute: '开启预览声音',
 };
 
 const ja: Messages = {
@@ -660,6 +697,10 @@ const ja: Messages = {
   choosePlatform: 'プラットフォームを選択',
   openOnTwitch: 'Twitch で開く',
   openOnKick: 'Kick で開く',
+  thumbPreviewHint:
+    'マウスを合わせると配信プレビュー。スピーカーで音声。',
+  previewMute: 'プレビューをミュート',
+  previewUnmute: 'プレビューの音声をオン',
 };
 
 const ALL: Record<LocaleId, Messages> = {

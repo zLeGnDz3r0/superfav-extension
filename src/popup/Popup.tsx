@@ -6,6 +6,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type MouseEvent as ReactMouseEvent,
 } from 'react';
 import { createPortal } from 'react-dom';
 import {
@@ -130,9 +131,128 @@ function PlatformBadge({ platform }: { platform: Platform }) {
   );
 }
 
-function StreamThumb({ stream }: { stream: Stream }) {
+const PREVIEW_MUTED_KEY = 'preview_muted';
+const HOVER_DELAY_MS = 300;
+
+let activePreviewKey: string | null = null;
+const previewListeners = new Set<(key: string | null) => void>();
+
+function setActivePreview(key: string | null): void {
+  if (activePreviewKey === key) return;
+  activePreviewKey = key;
+  for (const listener of previewListeners) listener(key);
+}
+
+function useIsActivePreview(key: string): boolean {
+  const [active, setActive] = useState(activePreviewKey === key);
+  useEffect(() => {
+    const onChange = (next: string | null) => setActive(next === key);
+    previewListeners.add(onChange);
+    return () => {
+      previewListeners.delete(onChange);
+      if (activePreviewKey === key) setActivePreview(null);
+    };
+  }, [key]);
+  return active;
+}
+
+function previewEmbedUrl(stream: Stream, muted: boolean): string {
+  if (stream.platform === 'twitch') {
+    const parent = encodeURIComponent(chrome.runtime.id);
+    const login = encodeURIComponent(stream.user_login);
+    return `https://player.twitch.tv/?channel=${login}&parent=${parent}&autoplay=true&muted=${muted ? 'true' : 'false'}`;
+  }
+  const login = encodeURIComponent(stream.user_login);
+  return `https://player.kick.com/${login}?autoplay=true&muted=${muted ? '1' : '0'}`;
+}
+
+function PlayHintIcon() {
   return (
-    <div className="relative aspect-video w-[76px] shrink-0 overflow-hidden rounded-lg bg-black/40">
+    <svg viewBox="0 0 24 24" width={14} height={14} fill="currentColor" aria-hidden>
+      <path d="M8 5.14v13.72a1 1 0 0 0 1.5.86l11-6.86a1 1 0 0 0 0-1.72l-11-6.86a1 1 0 0 0-1.5.86Z" />
+    </svg>
+  );
+}
+
+function SpeakerIcon({ muted }: { muted: boolean }) {
+  if (muted) {
+    return (
+      <svg viewBox="0 0 24 24" width={12} height={12} fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+        <path d="M11 5 6 9H2v6h4l5 4V5Z" strokeLinejoin="round" />
+        <path d="m16 9 5 5M21 9l-5 5" strokeLinecap="round" />
+      </svg>
+    );
+  }
+  return (
+    <svg viewBox="0 0 24 24" width={12} height={12} fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+      <path d="M11 5 6 9H2v6h4l5 4V5Z" strokeLinejoin="round" />
+      <path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function StreamThumb({ stream, locale }: { stream: Stream; locale: LocaleId }) {
+  const previewKey = `${stream.platform}:${stream.user_login}`;
+  const isPreview = useIsActivePreview(previewKey);
+  const [muted, setMuted] = useState(true);
+  const [hovering, setHovering] = useState(false);
+  const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    chrome.storage.local.get(PREVIEW_MUTED_KEY, (res) => {
+      const value = res[PREVIEW_MUTED_KEY];
+      setMuted(typeof value === 'boolean' ? value : true);
+    });
+  }, []);
+
+  const clearHoverTimer = useCallback(() => {
+    if (hoverTimer.current != null) {
+      clearTimeout(hoverTimer.current);
+      hoverTimer.current = null;
+    }
+  }, []);
+
+  const onEnter = useCallback(() => {
+    setHovering(true);
+    clearHoverTimer();
+    hoverTimer.current = setTimeout(() => {
+      setActivePreview(previewKey);
+    }, HOVER_DELAY_MS);
+  }, [clearHoverTimer, previewKey]);
+
+  const onLeave = useCallback(() => {
+    setHovering(false);
+    clearHoverTimer();
+    if (activePreviewKey === previewKey) setActivePreview(null);
+  }, [clearHoverTimer, previewKey]);
+
+  useEffect(() => () => clearHoverTimer(), [clearHoverTimer]);
+
+  const toggleMute = useCallback(
+    (e: ReactMouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setMuted((prev) => {
+        const next = !prev;
+        void chrome.storage.local.set({ [PREVIEW_MUTED_KEY]: next });
+        return next;
+      });
+    },
+    [],
+  );
+
+  const hint = t(locale, 'thumbPreviewHint');
+  const muteLabel = muted ? t(locale, 'previewUnmute') : t(locale, 'previewMute');
+  const showControls = hovering || isPreview;
+
+  return (
+    <div
+      className="sf-thumb relative aspect-video w-[76px] shrink-0 overflow-hidden rounded-lg bg-black/40"
+      title={hint}
+      aria-label={hint}
+      onMouseEnter={onEnter}
+      onMouseLeave={onLeave}
+    >
       {stream.thumbnail_url ? (
         <img
           src={thumbSrc(stream.thumbnail_url, stream.platform)}
@@ -140,7 +260,7 @@ function StreamThumb({ stream }: { stream: Stream }) {
           loading="lazy"
           // Kick CDN hotlink-blocks chrome-extension referrers.
           referrerPolicy="no-referrer"
-          className="h-full w-full object-cover"
+          className={`h-full w-full object-cover transition-opacity ${isPreview ? 'opacity-0' : 'opacity-100'}`}
           onError={(e) => {
             const el = e.currentTarget;
             const avatar = stream.avatar_url;
@@ -166,9 +286,36 @@ function StreamThumb({ stream }: { stream: Stream }) {
       >
         LIVE
       </div>
+      {isPreview ? (
+        <iframe
+          key={`${previewKey}:${muted ? 'm' : 'u'}`}
+          className="sf-thumb-iframe absolute inset-0 h-full w-full border-0"
+          src={previewEmbedUrl(stream, muted)}
+          title={hint}
+          allow="autoplay; encrypted-media; picture-in-picture"
+          sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+        />
+      ) : null}
+      {!isPreview && (
+        <span className={`sf-thumb-play ${showControls ? 'is-visible' : ''}`} aria-hidden>
+          <PlayHintIcon />
+        </span>
+      )}
       <span className="absolute left-1 top-1 rounded bg-red-600 px-1 py-px text-[9px] font-bold uppercase leading-none tracking-wide text-white">
         Live
       </span>
+      {showControls && (
+        <button
+          type="button"
+          className="sf-thumb-mute"
+          aria-label={muteLabel}
+          title={muteLabel}
+          onClick={toggleMute}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <SpeakerIcon muted={muted} />
+        </button>
+      )}
     </div>
   );
 }
@@ -774,19 +921,23 @@ export default function Popup() {
                       const s = row.stream;
                       return (
                         <li key={`${s.platform}:${s.id}:${s.user_login}`}>
-                          <button
-                            type="button"
-                            onClick={() => openStream(s)}
+                          <div
                             style={{ animationDelay: `${i * 45}ms` }}
-                            className="sf-card flex w-full items-center gap-3 rounded-xl bg-sf-surface p-2.5 text-left transition-colors hover:bg-sf-surface2"
+                            className="sf-card flex w-full items-center gap-3 rounded-xl bg-sf-surface p-2.5 transition-colors hover:bg-sf-surface2"
                           >
-                            <StreamThumb stream={s} />
-                            <StreamMeta stream={s} locale={locale} />
-                            <span className="flex shrink-0 items-center gap-1 self-start pt-0.5 text-xs font-semibold">
-                              <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
-                              {formatViewers(s.viewer_count)}
-                            </span>
-                          </button>
+                            <StreamThumb stream={s} locale={locale} />
+                            <button
+                              type="button"
+                              onClick={() => openStream(s)}
+                              className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                            >
+                              <StreamMeta stream={s} locale={locale} />
+                              <span className="flex shrink-0 items-center gap-1 self-start pt-0.5 text-xs font-semibold">
+                                <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
+                                {formatViewers(s.viewer_count)}
+                              </span>
+                            </button>
+                          </div>
                         </li>
                       );
                     }
@@ -804,28 +955,30 @@ export default function Popup() {
                           style={{ animationDelay: `${i * 45}ms` }}
                           className="sf-card overflow-hidden rounded-xl bg-sf-surface transition-colors"
                         >
-                          <button
-                            type="button"
-                            aria-expanded={pickerOpen}
-                            aria-label={`${displayName}. ${t(locale, 'choosePlatform')}`}
-                            onClick={() =>
-                              setPickerLogin((cur) =>
-                                cur === row.login ? null : row.login,
-                              )
-                            }
-                            className="flex w-full items-center gap-3 p-2.5 text-left transition-colors hover:bg-sf-surface2"
-                          >
-                            <StreamThumb stream={primary} />
-                            <StreamMeta
-                              stream={{ ...primary, user_name: displayName }}
-                              locale={locale}
-                              platforms={['twitch', 'kick']}
-                            />
-                            <span className="flex shrink-0 items-center gap-1 self-start pt-0.5 text-xs font-semibold">
-                              <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
-                              {formatViewers(rowViewerCount(row))}
-                            </span>
-                          </button>
+                          <div className="flex w-full items-center gap-3 p-2.5 transition-colors hover:bg-sf-surface2">
+                            <StreamThumb stream={primary} locale={locale} />
+                            <button
+                              type="button"
+                              aria-expanded={pickerOpen}
+                              aria-label={`${displayName}. ${t(locale, 'choosePlatform')}`}
+                              onClick={() =>
+                                setPickerLogin((cur) =>
+                                  cur === row.login ? null : row.login,
+                                )
+                              }
+                              className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                            >
+                              <StreamMeta
+                                stream={{ ...primary, user_name: displayName }}
+                                locale={locale}
+                                platforms={['twitch', 'kick']}
+                              />
+                              <span className="flex shrink-0 items-center gap-1 self-start pt-0.5 text-xs font-semibold">
+                                <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
+                                {formatViewers(rowViewerCount(row))}
+                              </span>
+                            </button>
+                          </div>
                           {pickerOpen && (
                             <div className="flex gap-2 border-t border-white/[0.06] px-2.5 pb-2.5 pt-2">
                               <button

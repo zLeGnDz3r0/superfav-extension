@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "SuperFav for Twitch & Kick",
-  "version": "1.2.4",
+  "version": "1.2.5",
   "description": "Marca tus streamers favoritos en Twitch y Kick y míralos en directo desde un dashboard minimalista.",
   "permissions": ["storage", "alarms", "notifications", "offscreen"],
   "background": {
@@ -10,15 +10,17 @@
   },
   "host_permissions": [
     "https://*.twitch.tv/*",
+    "https://player.twitch.tv/*",
     "https://*.jtvnw.net/*",
     "https://*.kick.com/*",
+    "https://player.kick.com/*",
     "https://stream.kick.com/*",
     "https://images.kick.com/*",
     "https://files.kick.com/*",
     "https://superfav.onrender.com/*"
   ],
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'"
+    "extension_pages": "script-src 'self'; object-src 'self'; frame-src 'self' https://player.twitch.tv https://player.kick.com https://*.kick.com https://*.twitch.tv"
   },
   "icons": {
     "16": "icons/icon16.png",

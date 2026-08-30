@@ -132,3 +132,57 @@ body {
   word-break: break-word;
   pointer-events: none;
 }
+
+/* Live hover preview on stream thumbnails */
+.sf-thumb-iframe {
+  pointer-events: none;
+  z-index: 1;
+  background: #000;
+}
+
+.sf-thumb-play {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+  background: radial-gradient(circle at center, rgba(0, 0, 0, 0.35) 0%, transparent 70%);
+}
+
+.sf-thumb-play.is-visible {
+  opacity: 0.9;
+}
+
+.sf-thumb-mute {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  z-index: 3;
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: 6px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.62);
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.sf-thumb-mute:hover {
+  background: rgba(0, 0, 0, 0.82);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sf-thumb-play {
+    transition: none;
+  }
+}
