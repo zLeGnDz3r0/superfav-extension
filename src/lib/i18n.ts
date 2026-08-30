@@ -145,7 +145,7 @@ const es: Messages = {
   openOnTwitch: 'Abrir en Twitch',
   openOnKick: 'Abrir en Kick',
   thumbPreviewHint:
-    'Pasa el ratón para ver el directo. Clic en el altavoz para el sonido.',
+    'Pasa el ratón: se abre el directo en una ventana. Ciérrala con la X.',
   previewMute: 'Silenciar preview',
   previewUnmute: 'Activar sonido del preview',
 };
@@ -206,7 +206,7 @@ const en: Messages = {
   choosePlatform: 'Choose platform',
   openOnTwitch: 'Open on Twitch',
   openOnKick: 'Open on Kick',
-  thumbPreviewHint: 'Hover to watch the live preview. Click the speaker for sound.',
+  thumbPreviewHint: 'Hover: the live preview pops onto the page (~3×). Speaker toggles sound.',
   previewMute: 'Mute preview',
   previewUnmute: 'Unmute preview',
 };
@@ -268,7 +268,7 @@ const ca: Messages = {
   openOnTwitch: 'Obrir a Twitch',
   openOnKick: 'Obrir a Kick',
   thumbPreviewHint:
-    'Passa el ratolí per veure el directe. Clic a l’altaveu per al so.',
+    'Passa el ratolí: el directe surt a la pàgina (~3×). Altaveu per al so.',
   previewMute: 'Silenciar preview',
   previewUnmute: 'Activar so del preview',
 };
@@ -330,7 +330,7 @@ const fr: Messages = {
   openOnTwitch: 'Ouvrir sur Twitch',
   openOnKick: 'Ouvrir sur Kick',
   thumbPreviewHint:
-    'Survolez pour voir le direct. Cliquez sur le haut-parleur pour le son.',
+    'Survolez : l’aperçu live apparaît sur la page (~3×). Haut-parleur pour le son.',
   previewMute: 'Couper le son du preview',
   previewUnmute: 'Activer le son du preview',
 };
@@ -392,7 +392,7 @@ const it: Messages = {
   openOnTwitch: 'Apri su Twitch',
   openOnKick: 'Apri su Kick',
   thumbPreviewHint:
-    'Passa il mouse per vedere la diretta. Clic sull’altoparlante per l’audio.',
+    'Passa il mouse: l’anteprima esce sulla pagina (~3×). Altoparlante per l’audio.',
   previewMute: 'Disattiva audio preview',
   previewUnmute: 'Attiva audio preview',
 };
@@ -454,7 +454,7 @@ const de: Messages = {
   openOnTwitch: 'Auf Twitch öffnen',
   openOnKick: 'Auf Kick öffnen',
   thumbPreviewHint:
-    'Maus darüber für Live-Vorschau. Lautsprecher für Ton.',
+    'Maus darüber: Live-Vorschau erscheint auf der Seite (~3×). Lautsprecher für Ton.',
   previewMute: 'Vorschau stummschalten',
   previewUnmute: 'Vorschau-Ton einschalten',
 };
@@ -516,7 +516,7 @@ const tr: Messages = {
   openOnTwitch: 'Twitch’te aç',
   openOnKick: 'Kick’te aç',
   thumbPreviewHint:
-    'Canlı önizleme için üzerine gel. Ses için hoparlöre tıkla.',
+    'Üzerine gel: canlı önizleme sayfada çıkar (~3×). Ses için hoparlör.',
   previewMute: 'Önizlemeyi sessize al',
   previewUnmute: 'Önizleme sesini aç',
 };
@@ -578,7 +578,7 @@ const hi: Messages = {
   openOnTwitch: 'Twitch पर खोलें',
   openOnKick: 'Kick पर खोलें',
   thumbPreviewHint:
-    'लाइव प्रीव्यू के लिए होवर करें। आवाज़ के लिए स्पीकर पर क्लिक करें।',
+    'होवर करें: लाइव प्रीव्यू पेज पर ~3× में दिखेगा। आवाज़ के लिए स्पीकर।',
   previewMute: 'प्रीव्यू म्यूट करें',
   previewUnmute: 'प्रीव्यू अनम्यूट करें',
 };
@@ -636,7 +636,7 @@ const zh: Messages = {
   choosePlatform: '选择平台',
   openOnTwitch: '在 Twitch 打开',
   openOnKick: '在 Kick 打开',
-  thumbPreviewHint: '悬停查看直播预览。点击喇叭开启声音。',
+  thumbPreviewHint: '悬停：直播预览出现在页面上（约 3×）。喇叭开关声音。',
   previewMute: '静音预览',
   previewUnmute: '开启预览声音',
 };
@@ -698,7 +698,7 @@ const ja: Messages = {
   openOnTwitch: 'Twitch で開く',
   openOnKick: 'Kick で開く',
   thumbPreviewHint:
-    'マウスを合わせると配信プレビュー。スピーカーで音声。',
+    'ホバーすると配信プレビューがページ上に出ます（約3倍）。スピーカーで音声。',
   previewMute: 'プレビューをミュート',
   previewUnmute: 'プレビューの音声をオン',
 };

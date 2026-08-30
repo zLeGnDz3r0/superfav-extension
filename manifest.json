@@ -3,7 +3,7 @@
   "name": "SuperFav for Twitch & Kick",
   "version": "1.2.5",
   "description": "Marca tus streamers favoritos en Twitch y Kick y míralos en directo desde un dashboard minimalista.",
-  "permissions": ["storage", "alarms", "notifications", "offscreen"],
+  "permissions": ["storage", "alarms", "notifications", "offscreen", "windows"],
   "background": {
     "service_worker": "src/background/index.ts",
     "type": "module"
@@ -45,6 +45,14 @@
     {
       "matches": ["https://*.kick.com/*"],
       "js": ["src/content/injectKickSuperFav.ts"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://player.twitch.tv/*",
+        "https://player.kick.com/*"
+      ],
+      "js": ["src/content/injectPreviewChrome.ts"],
       "run_at": "document_idle"
     }
   ]

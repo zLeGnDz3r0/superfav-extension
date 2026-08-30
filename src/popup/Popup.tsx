@@ -47,6 +47,7 @@ import {
   type NotifSoundId,
 } from '../lib/notifSounds';
 import { fetchKickStreams, kickThumbSrc } from '../lib/kickApi';
+import { previewAnchorFromElement, showLivePreview } from '../lib/livePreview';
 
 declare const __API_BASE__: string;
 const API_BASE = __API_BASE__;
@@ -134,8 +135,6 @@ function PlatformBadge({ platform }: { platform: Platform }) {
 const PREVIEW_MUTED_KEY = 'preview_muted';
 const HOVER_DELAY_MS = 300;
 const LEAVE_GRACE_MS = 160;
-/** Live preview float size vs thumbnail (~3×). */
-const PREVIEW_SCALE = 3;
 
 let activePreviewKey: string | null = null;
 const previewListeners = new Set<(key: string | null) => void>();
@@ -157,34 +156,6 @@ function useIsActivePreview(key: string): boolean {
     };
   }, [key]);
   return active;
-}
-
-/** Hosted proxy page — Twitch rejects chrome-extension:// as parent. */
-function previewEmbedUrl(stream: Stream, muted: boolean): string {
-  const qs = new URLSearchParams({
-    platform: stream.platform,
-    login: stream.user_login,
-    muted: muted ? '1' : '0',
-  });
-  return `${API_BASE}/preview?${qs.toString()}`;
-}
-
-function clampPreviewPos(
-  thumb: DOMRect,
-  width: number,
-  height: number,
-): { left: number; top: number } {
-  const gap = 8;
-  const pad = 8;
-  const vw = window.innerWidth;
-  const vh = window.innerHeight;
-  let left = thumb.right + gap;
-  if (left + width > vw - pad) left = thumb.left - gap - width;
-  if (left < pad) left = Math.max(pad, (vw - width) / 2);
-  let top = thumb.top + (thumb.height - height) / 2;
-  if (top < pad) top = pad;
-  if (top + height > vh - pad) top = Math.max(pad, vh - pad - height);
-  return { left: Math.round(left), top: Math.round(top) };
 }
 
 function PlayHintIcon() {
@@ -217,9 +188,6 @@ function StreamThumb({ stream, locale }: { stream: Stream; locale: LocaleId }) {
   const isPreview = useIsActivePreview(previewKey);
   const [muted, setMuted] = useState(true);
   const [hovering, setHovering] = useState(false);
-  const [panelPos, setPanelPos] = useState<{ left: number; top: number; width: number; height: number } | null>(
-    null,
-  );
   const wrapRef = useRef<HTMLDivElement>(null);
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -256,30 +224,18 @@ function StreamThumb({ stream, locale }: { stream: Stream; locale: LocaleId }) {
 
   useEffect(() => () => clearHoverTimer(), [clearHoverTimer]);
 
-  useLayoutEffect(() => {
-    if (!isPreview || !wrapRef.current) {
-      setPanelPos(null);
-      document.documentElement.classList.remove('sf-preview-open');
-      return;
-    }
-    // Chrome sizes the action popup from document flow — expand so the float isn't clipped.
-    document.documentElement.classList.add('sf-preview-open');
-    const place = () => {
-      const el = wrapRef.current;
-      if (!el) return;
-      const r = el.getBoundingClientRect();
-      const width = Math.round(r.width * PREVIEW_SCALE);
-      const height = Math.round(r.height * PREVIEW_SCALE);
-      const { left, top } = clampPreviewPos(r, width, height);
-      setPanelPos({ left, top, width, height });
-    };
-    place();
-    window.addEventListener('resize', place);
-    return () => {
-      window.removeEventListener('resize', place);
-      document.documentElement.classList.remove('sf-preview-open');
-    };
-  }, [isPreview]);
+  useEffect(() => {
+    if (!isPreview || !wrapRef.current) return;
+    // Sticky pop-out: do not close on popup unmount — focusing the player
+    // dismisses the action popup and used to kill the window instantly.
+    void showLivePreview({
+      key: previewKey,
+      platform: stream.platform,
+      login: stream.user_login,
+      muted,
+      anchor: previewAnchorFromElement(wrapRef.current),
+    });
+  }, [isPreview, muted, previewKey, stream.platform, stream.user_login]);
 
   const toggleMute = useCallback((e: ReactMouseEvent) => {
     e.preventDefault();
@@ -294,17 +250,17 @@ function StreamThumb({ stream, locale }: { stream: Stream; locale: LocaleId }) {
   const hint = t(locale, 'thumbPreviewHint');
   const muteLabel = muted ? t(locale, 'previewUnmute') : t(locale, 'previewMute');
   const showHint = hovering && !isPreview;
+  const showMute = hovering || isPreview;
 
   return (
-    <>
-      <div
-        ref={wrapRef}
-        className="sf-thumb relative aspect-video w-[76px] shrink-0 overflow-hidden rounded-lg bg-black/40"
-        title={hint}
-        aria-label={hint}
-        onMouseEnter={onEnter}
-        onMouseLeave={onLeave}
-      >
+    <div
+      ref={wrapRef}
+      className={`sf-thumb relative aspect-video w-[76px] shrink-0 overflow-hidden rounded-lg bg-black/40 ${isPreview ? 'sf-thumb--live' : ''}`}
+      title={hint}
+      aria-label={hint}
+      onMouseEnter={onEnter}
+      onMouseLeave={onLeave}
+    >
         {stream.thumbnail_url ? (
           <img
             src={thumbSrc(stream.thumbnail_url, stream.platform)}
@@ -344,42 +300,19 @@ function StreamThumb({ stream, locale }: { stream: Stream; locale: LocaleId }) {
         <span className="absolute left-1 top-1 rounded bg-red-600 px-1 py-px text-[9px] font-bold uppercase leading-none tracking-wide text-white">
           Live
         </span>
-      </div>
-      {isPreview &&
-        panelPos &&
-        createPortal(
-          <div
-            className="sf-thumb-float"
-            style={{
-              left: panelPos.left,
-              top: panelPos.top,
-              width: panelPos.width,
-              height: panelPos.height,
-            }}
-            onMouseEnter={onEnter}
-            onMouseLeave={onLeave}
+        {showMute && (
+          <button
+            type="button"
+            className="sf-thumb-mute"
+            aria-label={muteLabel}
+            title={muteLabel}
+            onClick={toggleMute}
+            onMouseDown={(e) => e.stopPropagation()}
           >
-            <iframe
-              key={`${previewKey}:${muted ? 'm' : 'u'}`}
-              className="sf-thumb-float-iframe"
-              src={previewEmbedUrl(stream, muted)}
-              title={hint}
-              allow="autoplay; encrypted-media; picture-in-picture"
-            />
-            <button
-              type="button"
-              className="sf-thumb-mute sf-thumb-mute--float"
-              aria-label={muteLabel}
-              title={muteLabel}
-              onClick={toggleMute}
-              onMouseDown={(e) => e.stopPropagation()}
-            >
-              <SpeakerIcon muted={muted} />
-            </button>
-          </div>,
-          document.body,
+            <SpeakerIcon muted={muted} />
+          </button>
         )}
-    </>
+    </div>
   );
 }
 
