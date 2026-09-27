@@ -28,6 +28,7 @@ import {
 import { LOCALE_KEY, loadStoredLocale, t, type LocaleId } from '../lib/i18n';
 import { soundFileFor, type NotifSoundId } from '../lib/notifSounds';
 import { fetchKickChannels, fetchKickStreams } from '../lib/kickApi';
+import { appendNotifHistory } from '../lib/notifHistory';
 
 let cachedLocale: LocaleId = 'es';
 
@@ -261,6 +262,15 @@ async function notifyLive(stream: LiveStream): Promise<void> {
     message,
     settings.soundId,
   );
+
+  await appendNotifHistory({
+    kind: 'live',
+    platform: stream.platform,
+    login: stream.user_login,
+    displayName: stream.user_name,
+    streamTitle: stream.title || '',
+    gameName: stream.game_name || '',
+  });
 }
 
 async function notifyTitleChange(channel: ChannelInfo): Promise<void> {
@@ -283,6 +293,15 @@ async function notifyTitleChange(channel: ChannelInfo): Promise<void> {
     message,
     settings.soundId,
   );
+
+  await appendNotifHistory({
+    kind: 'title',
+    platform: channel.platform,
+    login: channel.user_login,
+    displayName: channel.user_name,
+    streamTitle: channel.title.trim(),
+    gameName: channel.game_name || '',
+  });
 }
 
 async function updateBadge(count: number): Promise<void> {

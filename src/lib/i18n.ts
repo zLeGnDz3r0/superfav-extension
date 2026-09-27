@@ -67,7 +67,16 @@ export type MessageKey =
   | 'openOnKick'
   | 'thumbPreviewHint'
   | 'previewMute'
-  | 'previewUnmute';
+  | 'previewUnmute'
+  | 'historyOpen'
+  | 'historyTitle'
+  | 'historyBack'
+  | 'historyEmpty'
+  | 'historyEmptyDesc'
+  | 'historyClear'
+  | 'historyKindLive'
+  | 'historyKindTitle'
+  | 'historyHint';
 
 export type Messages = Record<MessageKey, string>;
 
@@ -148,6 +157,16 @@ const es: Messages = {
     'Pasa el ratón: se abre el directo en una ventana. Ciérrala con la X.',
   previewMute: 'Silenciar preview',
   previewUnmute: 'Activar sonido del preview',
+  historyOpen: 'Historial de avisos',
+  historyTitle: 'Historial de esta sesión',
+  historyBack: 'Volver a directos',
+  historyEmpty: 'Sin avisos en esta sesión',
+  historyEmptyDesc:
+    'Aquí verás los toasts de directo y de cambio de título que suenen mientras el navegador esté abierto.',
+  historyClear: 'Borrar historial',
+  historyKindLive: 'Directo',
+  historyKindTitle: 'Título',
+  historyHint: 'Solo esta sesión del navegador',
 };
 
 const en: Messages = {
@@ -209,6 +228,16 @@ const en: Messages = {
   thumbPreviewHint: 'Hover: the live preview pops onto the page (~3×). Speaker toggles sound.',
   previewMute: 'Mute preview',
   previewUnmute: 'Unmute preview',
+  historyOpen: 'Notification history',
+  historyTitle: 'This session’s history',
+  historyBack: 'Back to live',
+  historyEmpty: 'No alerts this session',
+  historyEmptyDesc:
+    'Live and title-change toasts that fire while the browser is open will show up here.',
+  historyClear: 'Clear history',
+  historyKindLive: 'Live',
+  historyKindTitle: 'Title',
+  historyHint: 'Browser session only',
 };
 
 const ca: Messages = {
@@ -271,6 +300,16 @@ const ca: Messages = {
     'Passa el ratolí: el directe surt a la pàgina (~3×). Altaveu per al so.',
   previewMute: 'Silenciar preview',
   previewUnmute: 'Activar so del preview',
+  historyOpen: 'Historial d’avisos',
+  historyTitle: 'Historial d’aquesta sessió',
+  historyBack: 'Tornar als directes',
+  historyEmpty: 'Sense avisos en aquesta sessió',
+  historyEmptyDesc:
+    'Aquí veuràs els toasts de directe i de canvi de títol que sonin mentre el navegador estigui obert.',
+  historyClear: 'Esborrar historial',
+  historyKindLive: 'Directe',
+  historyKindTitle: 'Títol',
+  historyHint: 'Només aquesta sessió del navegador',
 };
 
 const fr: Messages = {
@@ -333,6 +372,16 @@ const fr: Messages = {
     'Survolez : l’aperçu live apparaît sur la page (~3×). Haut-parleur pour le son.',
   previewMute: 'Couper le son du preview',
   previewUnmute: 'Activer le son du preview',
+  historyOpen: 'Historique des alertes',
+  historyTitle: 'Historique de cette session',
+  historyBack: 'Retour aux directs',
+  historyEmpty: 'Aucune alerte cette session',
+  historyEmptyDesc:
+    'Les toasts de direct et de changement de titre émis pendant que le navigateur est ouvert apparaîtront ici.',
+  historyClear: 'Effacer l’historique',
+  historyKindLive: 'Direct',
+  historyKindTitle: 'Titre',
+  historyHint: 'Session du navigateur uniquement',
 };
 
 const it: Messages = {
@@ -395,6 +444,16 @@ const it: Messages = {
     'Passa il mouse: l’anteprima esce sulla pagina (~3×). Altoparlante per l’audio.',
   previewMute: 'Disattiva audio preview',
   previewUnmute: 'Attiva audio preview',
+  historyOpen: 'Cronologia avvisi',
+  historyTitle: 'Cronologia di questa sessione',
+  historyBack: 'Torna ai live',
+  historyEmpty: 'Nessun avviso in questa sessione',
+  historyEmptyDesc:
+    'Qui vedrai i toast di live e di cambio titolo emessi mentre il browser è aperto.',
+  historyClear: 'Cancella cronologia',
+  historyKindLive: 'Live',
+  historyKindTitle: 'Titolo',
+  historyHint: 'Solo questa sessione del browser',
 };
 
 const de: Messages = {
@@ -457,6 +516,16 @@ const de: Messages = {
     'Maus darüber: Live-Vorschau erscheint auf der Seite (~3×). Lautsprecher für Ton.',
   previewMute: 'Vorschau stummschalten',
   previewUnmute: 'Vorschau-Ton einschalten',
+  historyOpen: 'Benachrichtigungsverlauf',
+  historyTitle: 'Verlauf dieser Sitzung',
+  historyBack: 'Zurück zu Live',
+  historyEmpty: 'Keine Hinweise in dieser Sitzung',
+  historyEmptyDesc:
+    'Live- und Titeländerungs-Toasts, die bei geöffnetem Browser erscheinen, siehst du hier.',
+  historyClear: 'Verlauf löschen',
+  historyKindLive: 'Live',
+  historyKindTitle: 'Titel',
+  historyHint: 'Nur diese Browser-Sitzung',
 };
 
 const tr: Messages = {
@@ -519,6 +588,16 @@ const tr: Messages = {
     'Üzerine gel: canlı önizleme sayfada çıkar (~3×). Ses için hoparlör.',
   previewMute: 'Önizlemeyi sessize al',
   previewUnmute: 'Önizleme sesini aç',
+  historyOpen: 'Bildirim geçmişi',
+  historyTitle: 'Bu oturumun geçmişi',
+  historyBack: 'Canlılara dön',
+  historyEmpty: 'Bu oturumda bildirim yok',
+  historyEmptyDesc:
+    'Tarayıcı açıkken çalan canlı ve başlık değişikliği toast’ları burada görünür.',
+  historyClear: 'Geçmişi temizle',
+  historyKindLive: 'Canlı',
+  historyKindTitle: 'Başlık',
+  historyHint: 'Yalnızca bu tarayıcı oturumu',
 };
 
 const hi: Messages = {
@@ -581,6 +660,16 @@ const hi: Messages = {
     'होवर करें: लाइव प्रीव्यू पेज पर ~3× में दिखेगा। आवाज़ के लिए स्पीकर।',
   previewMute: 'प्रीव्यू म्यूट करें',
   previewUnmute: 'प्रीव्यू अनम्यूट करें',
+  historyOpen: 'सूचना इतिहास',
+  historyTitle: 'इस सत्र का इतिहास',
+  historyBack: 'लाइव पर वापस',
+  historyEmpty: 'इस सत्र में कोई सूचना नहीं',
+  historyEmptyDesc:
+    'ब्राउज़र खुला होने पर बजने वाले लाइव और शीर्षक-परिवर्तन टोस्ट यहाँ दिखेंगे।',
+  historyClear: 'इतिहास साफ़ करें',
+  historyKindLive: 'लाइव',
+  historyKindTitle: 'शीर्षक',
+  historyHint: 'केवल यह ब्राउज़र सत्र',
 };
 
 const zh: Messages = {
@@ -639,6 +728,15 @@ const zh: Messages = {
   thumbPreviewHint: '悬停：直播预览出现在页面上（约 3×）。喇叭开关声音。',
   previewMute: '静音预览',
   previewUnmute: '开启预览声音',
+  historyOpen: '通知历史',
+  historyTitle: '本次会话历史',
+  historyBack: '返回直播',
+  historyEmpty: '本次会话暂无通知',
+  historyEmptyDesc: '浏览器开启期间触发的开播与标题变更提示会出现在这里。',
+  historyClear: '清空历史',
+  historyKindLive: '开播',
+  historyKindTitle: '标题',
+  historyHint: '仅限当前浏览器会话',
 };
 
 const ja: Messages = {
@@ -701,6 +799,16 @@ const ja: Messages = {
     'ホバーすると配信プレビューがページ上に出ます（約3倍）。スピーカーで音声。',
   previewMute: 'プレビューをミュート',
   previewUnmute: 'プレビューの音声をオン',
+  historyOpen: '通知履歴',
+  historyTitle: 'このセッションの履歴',
+  historyBack: '配信一覧に戻る',
+  historyEmpty: 'このセッションの通知はありません',
+  historyEmptyDesc:
+    'ブラウザを開いている間に鳴った配信開始・タイトル変更のトーストがここに表示されます。',
+  historyClear: '履歴を削除',
+  historyKindLive: '配信',
+  historyKindTitle: 'タイトル',
+  historyHint: 'このブラウザセッションのみ',
 };
 
 const ALL: Record<LocaleId, Messages> = {

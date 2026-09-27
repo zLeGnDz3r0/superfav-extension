@@ -42,6 +42,14 @@ import {
   type NotificationSettings,
 } from '../lib/notificationSettings';
 import {
+  NOTIF_HISTORY_KEY,
+  clearNotifHistory,
+  formatNotifHistoryTime,
+  loadNotifHistory,
+  normalizeNotifHistory,
+  type NotifHistoryEntry,
+} from '../lib/notifHistory';
+import {
   SOUND_OPTIONS,
   soundFileFor,
   type NotifSoundId,
@@ -482,6 +490,25 @@ function GearIcon({ className }: { className?: string }) {
   );
 }
 
+/** Inbox tray — intentionally not circular arrows (refresh) or a clock-with-arrow (history glyph). */
+function HistoryIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <polyline points="22 12 16 12 14 15 10 15 8 12 2 12" />
+      <path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" />
+    </svg>
+  );
+}
+
 function MiniToggle({
   checked,
   disabled,
@@ -618,6 +645,8 @@ export default function Popup() {
   const [notifSettings, setNotifSettings] = useState<NotificationSettings>(DEFAULT_NOTIF_SETTINGS);
   const [channelPrefs, setChannelPrefs] = useState<ChannelNotifMap>({});
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [history, setHistory] = useState<NotifHistoryEntry[]>([]);
   const [prefHint, setPrefHint] = useState<string | null>(null);
   const [locale, setLocale] = useState<LocaleId>('es');
   const [pickerLogin, setPickerLogin] = useState<string | null>(null);
@@ -629,16 +658,25 @@ export default function Popup() {
   }, []);
 
   useEffect(() => {
+    void loadNotifHistory().then(setHistory);
     const onStorageChange = (
       changes: Record<string, chrome.storage.StorageChange>,
       areaName: string,
     ) => {
+      if (areaName === 'session' && changes[NOTIF_HISTORY_KEY]) {
+        setHistory(normalizeNotifHistory(changes[NOTIF_HISTORY_KEY].newValue));
+      }
       if (areaName !== 'sync' || !changes[LOCALE_KEY]) return;
       const next = changes[LOCALE_KEY].newValue;
       if (typeof next === 'string') setLocale(next as LocaleId);
     };
     chrome.storage.onChanged.addListener(onStorageChange);
     return () => chrome.storage.onChanged.removeListener(onStorageChange);
+  }, []);
+
+  const handleClearHistory = useCallback(() => {
+    setHistory([]);
+    void clearNotifHistory();
   }, []);
 
   const handleLocaleChange = useCallback((next: LocaleId) => {
@@ -824,7 +862,27 @@ export default function Popup() {
             <button
               type="button"
               onClick={() => {
+                setHistoryOpen((open) => !open);
+                setSettingsOpen(false);
+                setPrefHint(null);
+                setPickerLogin(null);
+              }}
+              aria-label={historyOpen ? t(locale, 'historyBack') : t(locale, 'historyOpen')}
+              aria-expanded={historyOpen}
+              title={t(locale, 'historyOpen')}
+              className={`flex h-7 w-7 items-center justify-center rounded-lg transition-colors ${
+                historyOpen
+                  ? 'bg-sf-accent/20 text-sf-accent'
+                  : 'text-sf-muted hover:bg-white/[0.06] hover:text-sf-text'
+              }`}
+            >
+              <HistoryIcon className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => {
                 setSettingsOpen((open) => !open);
+                setHistoryOpen(false);
                 setPrefHint(null);
                 setPickerLogin(null);
               }}
@@ -839,7 +897,7 @@ export default function Popup() {
             >
               <GearIcon className="h-4 w-4" />
             </button>
-            {!settingsOpen && (
+            {!settingsOpen && !historyOpen && (
               <button
                 type="button"
                 onClick={load}
@@ -853,7 +911,7 @@ export default function Popup() {
                 />
               </button>
             )}
-            {!settingsOpen && status === 'ready' && liveRows.length > 0 && (
+            {!settingsOpen && !historyOpen && status === 'ready' && liveRows.length > 0 && (
               <span className="flex items-center gap-1.5 rounded-full bg-white/[0.06] px-2 py-1 text-xs font-medium text-sf-muted">
                 <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-red-500" />
                 {t(locale, 'liveCount', { n: liveRows.length })}
@@ -862,6 +920,7 @@ export default function Popup() {
           </div>
         </header>
 
+        {!historyOpen && (
         <section className="space-y-1.5 border-b border-white/[0.06] px-3 py-2">
           <ToggleRow
             id="desktop-notif-toggle"
@@ -888,9 +947,12 @@ export default function Popup() {
             }
           />
         </section>
+        )}
 
         <main className="sf-scroll max-h-[460px] min-h-[260px] overflow-y-auto p-3">
-          {settingsOpen ? (
+          {historyOpen ? (
+            <HistoryView locale={locale} entries={history} onClear={handleClearHistory} />
+          ) : settingsOpen ? (
             <ChannelSettingsView
               locale={locale}
               favs={sortedFavs}
@@ -1019,6 +1081,93 @@ export default function Popup() {
           )}
         </main>
       </div>
+    </div>
+  );
+}
+
+function HistoryView({
+  locale,
+  entries,
+  onClear,
+}: {
+  locale: LocaleId;
+  entries: NotifHistoryEntry[];
+  onClear: () => void;
+}) {
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <h2 className="text-sm font-semibold text-sf-text">{t(locale, 'historyTitle')}</h2>
+          <p className="mt-0.5 text-[11px] text-sf-muted">{t(locale, 'historyHint')}</p>
+        </div>
+        {entries.length > 0 && (
+          <button
+            type="button"
+            onClick={onClear}
+            className="shrink-0 rounded-lg border border-white/[0.08] bg-white/[0.04] px-2.5 py-1 text-[11px] font-semibold text-sf-muted transition-colors hover:border-red-500/35 hover:bg-red-500/10 hover:text-red-300"
+          >
+            {t(locale, 'historyClear')}
+          </button>
+        )}
+      </div>
+
+      {entries.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-white/[0.08] bg-white/[0.02] px-3 py-8 text-center">
+          <p className="text-sm font-medium text-sf-text">{t(locale, 'historyEmpty')}</p>
+          <p className="mt-1 text-[11px] leading-relaxed text-sf-muted">
+            {t(locale, 'historyEmptyDesc')}
+          </p>
+        </div>
+      ) : (
+        <ul className="flex flex-col gap-2">
+          {entries.map((entry) => {
+            const game = entry.gameName.trim() || t(locale, 'noCategory');
+            const title = entry.streamTitle.trim() || t(locale, 'noTitle');
+            const kindLabel =
+              entry.kind === 'live'
+                ? t(locale, 'historyKindLive')
+                : t(locale, 'historyKindTitle');
+            return (
+              <li
+                key={entry.id}
+                className="rounded-xl border border-white/[0.06] bg-sf-surface px-3 py-2.5"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex min-w-0 items-center gap-1.5">
+                    <strong className="truncate text-[13px] font-semibold text-sf-text">
+                      {entry.displayName || entry.login}
+                    </strong>
+                    <PlatformBadge platform={entry.platform} />
+                  </div>
+                  <span
+                    className={`shrink-0 rounded px-1.5 py-0.5 text-[9px] font-extrabold uppercase tracking-wide ${
+                      entry.kind === 'live'
+                        ? 'bg-red-500/15 text-red-400'
+                        : 'bg-sf-accent/15 text-sf-accent'
+                    }`}
+                  >
+                    {kindLabel}
+                  </span>
+                </div>
+                <p className="mt-1 text-[10px] font-medium text-sf-muted">
+                  {formatNotifHistoryTime(entry.at, locale)}
+                </p>
+                <p
+                  className={`mt-1.5 text-[11px] font-semibold ${
+                    entry.platform === 'kick' ? 'text-sf-kick' : 'text-sf-accent'
+                  }`}
+                >
+                  {game}
+                </p>
+                <p className="mt-0.5 line-clamp-2 text-[12px] leading-snug text-sf-text/90">
+                  {title}
+                </p>
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </div>
   );
 }
