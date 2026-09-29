@@ -1154,15 +1154,15 @@ function HistoryView({
                   {formatNotifHistoryTime(entry.at, locale)}
                 </p>
                 <p
-                  className={`mt-1.5 text-[11px] font-semibold ${
+                  className={`mt-1.5 truncate text-[11px] font-semibold ${
                     entry.platform === 'kick' ? 'text-sf-kick' : 'text-sf-accent'
                   }`}
                 >
                   {game}
                 </p>
-                <p className="mt-0.5 line-clamp-2 text-[12px] leading-snug text-sf-text/90">
-                  {title}
-                </p>
+                <div className="mt-0.5 min-w-0">
+                  <TruncatedTitle text={title} />
+                </div>
               </li>
             );
           })}
