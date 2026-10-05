@@ -1385,6 +1385,10 @@ function ChannelSettingsView({
           )}
         </div>
       )}
+
+      <p className="select-none pt-1 text-center text-[10px] text-sf-muted/60">
+        SuperFav v{chrome.runtime.getManifest().version}
+      </p>
     </div>
   );
 }
