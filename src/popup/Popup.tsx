@@ -56,6 +56,14 @@ import {
 } from '../lib/notifSounds';
 import { fetchKickStreams, kickThumbSrc } from '../lib/kickApi';
 import { previewAnchorFromElement, showLivePreview } from '../lib/livePreview';
+import {
+  LIVE_SNAPSHOTS_KEY,
+  loadLiveSnapshots,
+  mergeLiveSnapshots,
+  normalizeLiveSnapshots,
+  saveLiveSnapshots,
+  type LiveSnapshot,
+} from '../lib/liveCache';
 
 declare const __API_BASE__: string;
 const API_BASE = __API_BASE__;
@@ -580,6 +588,33 @@ function ToggleRow({
   );
 }
 
+const FETCH_TIMEOUT_MS = 12_000;
+
+function fetchTimeout(url: string): Promise<Response> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
+  return fetch(url, { signal: ctrl.signal, cache: 'no-store' }).finally(() =>
+    clearTimeout(timer),
+  );
+}
+
+function snapshotsForFavs(rows: LiveSnapshot[], favs: FavEntry[]): Stream[] {
+  const keys = new Set(favs.map(favKeyOf));
+  return rows
+    .filter((row) => keys.has(favKeyOf({ platform: row.platform, login: row.user_login })))
+    .map((row) => ({
+      platform: row.platform,
+      id: row.id,
+      user_login: row.user_login,
+      user_name: row.user_name,
+      game_name: row.game_name,
+      title: row.title,
+      viewer_count: row.viewer_count,
+      thumbnail_url: row.thumbnail_url,
+      avatar_url: row.avatar_url,
+    }));
+}
+
 async function fetchStreamsFor(
   platform: Platform,
   logins: string[],
@@ -588,14 +623,15 @@ async function fetchStreamsFor(
   const favSet = new Set(logins);
 
   if (platform === 'kick') {
-    // Prefer backend Kick Dev API (official thumbs). Fall back to browser scrape.
+    // Empty 200 from Render is not "nobody live": Kick often blocks that IP.
+    // Same fallback as the background poll, which is what sets the badge.
     try {
-      const res = await fetch(
+      const res = await fetchTimeout(
         `${API_BASE}/api/kick/streams?users=${logins.join(',')}`,
       );
       if (res.ok) {
         const data = await res.json();
-        return ((data.data ?? []) as Stream[])
+        const rows = ((data.data ?? []) as Stream[])
           .map((s) => ({
             ...s,
             platform: 'kick' as const,
@@ -603,9 +639,10 @@ async function fetchStreamsFor(
             thumbnail_url: kickThumbSrc(s.thumbnail_url),
           }))
           .filter((s) => favSet.has(s.user_login));
+        if (rows.length > 0) return rows;
       }
     } catch {
-      /* fall through */
+      /* fall through to the browser Kick API */
     }
     const streams = await fetchKickStreams(logins);
     return streams
@@ -617,9 +654,10 @@ async function fetchStreamsFor(
       }));
   }
 
-  const res = await fetch(`${API_BASE}/api/streams?users=${logins.join(',')}`);
+  const res = await fetchTimeout(`${API_BASE}/api/streams?users=${logins.join(',')}`);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const data = await res.json();
+  if (!Array.isArray(data.data)) throw new Error('Bad streams payload');
   return ((data.data ?? []) as Stream[])
     .map((s) => ({
       ...s,
@@ -665,6 +703,10 @@ export default function Popup() {
     ) => {
       if (areaName === 'session' && changes[NOTIF_HISTORY_KEY]) {
         setHistory(normalizeNotifHistory(changes[NOTIF_HISTORY_KEY].newValue));
+      }
+      if (areaName === 'local' && changes[LIVE_SNAPSHOTS_KEY]) {
+        setStreams(normalizeLiveSnapshots(changes[LIVE_SNAPSHOTS_KEY].newValue) as Stream[]);
+        setStatus('ready');
       }
       if (areaName !== 'sync' || !changes[LOCALE_KEY]) return;
       const next = changes[LOCALE_KEY].newValue;
@@ -722,8 +764,15 @@ export default function Popup() {
       if (nextFavs.length === 0) {
         setStreams([]);
         setStatus('ready');
+        void saveLiveSnapshots([]);
         syncLiveBadge([], { twitch: true, kick: true });
         return;
+      }
+      const favKeys = new Set(nextFavs.map(favKeyOf));
+      const cached = snapshotsForFavs(await loadLiveSnapshots(), nextFavs);
+      if (cached.length > 0) {
+        setStreams(cached);
+        setStatus('ready');
       }
       try {
         const results = await Promise.allSettled([
@@ -735,18 +784,22 @@ export default function Popup() {
         const twitchOk = results[0].status === 'fulfilled';
         const kickOk = results[1].status === 'fulfilled';
         if (!twitchOk && !kickOk) {
-          setStatus('error');
+          if (cached.length === 0) setStatus('error');
           return;
         }
-        const live = [...twitch, ...kick].sort((a, b) => b.viewer_count - a.viewer_count);
+        const merged = mergeLiveSnapshots(cached, [...twitch, ...kick], { twitch: twitchOk, kick: kickOk }, favKeys);
+        const live = snapshotsForFavs(merged, nextFavs).sort(
+          (a, b) => b.viewer_count - a.viewer_count,
+        );
         setStreams(live);
         setStatus('ready');
+        void saveLiveSnapshots(live);
         syncLiveBadge(
           live.map((s) => favKeyOf({ platform: s.platform, login: s.user_login })),
-          { twitch: twitchOk, kick: kickOk },
+          { twitch: true, kick: true },
         );
       } catch {
-        setStatus('error');
+        if (cached.length === 0) setStatus('error');
       }
     });
   }, [syncLiveBadge]);

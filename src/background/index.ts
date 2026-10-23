@@ -29,6 +29,12 @@ import { LOCALE_KEY, loadStoredLocale, t, type LocaleId } from '../lib/i18n';
 import { soundFileFor, type NotifSoundId } from '../lib/notifSounds';
 import { fetchKickChannels, fetchKickStreams } from '../lib/kickApi';
 import { appendNotifHistory } from '../lib/notifHistory';
+import {
+  loadLiveSnapshots,
+  mergeLiveSnapshots,
+  saveLiveSnapshots,
+  type LiveSnapshot,
+} from '../lib/liveCache';
 
 let cachedLocale: LocaleId = 'es';
 
@@ -474,6 +480,27 @@ async function fetchPlatformChannels(
   }
 }
 
+function toLiveSnapshot(stream: LiveStream): LiveSnapshot {
+  const row = stream as LiveStream & {
+    id?: string;
+    viewer_count?: number;
+    thumbnail_url?: string;
+    avatar_url?: string;
+  };
+  const key = streamKey(stream);
+  return {
+    platform: stream.platform,
+    id: row.id || key,
+    user_login: stream.user_login.toLowerCase(),
+    user_name: stream.user_name,
+    game_name: stream.game_name ?? '',
+    title: stream.title ?? '',
+    viewer_count: typeof row.viewer_count === 'number' ? row.viewer_count : 0,
+    thumbnail_url: row.thumbnail_url ?? '',
+    avatar_url: row.avatar_url,
+  };
+}
+
 async function pollStreams(favs: FavEntry[]): Promise<Set<string>> {
   const justWentLive = new Set<string>();
   const twitchLogins = loginsForPlatform(favs, 'twitch');
@@ -551,7 +578,16 @@ async function pollStreams(favs: FavEntry[]): Promise<Set<string>> {
     if (!favKeySet.has(key)) delete titleUpdates[key];
   }
 
-  await syncLiveState([...nextKeys]);
+  const previousSnaps = await loadLiveSnapshots();
+  const fetchedSnaps = fetchedStreams.map(toLiveSnapshot);
+  const snapshots = mergeLiveSnapshots(
+    previousSnaps,
+    fetchedSnaps,
+    { twitch: twitchRes.ok, kick: kickRes.ok },
+    favKeySet,
+  );
+  await saveLiveSnapshots(snapshots);
+  await syncLiveState(snapshots.map((row) => favKey(row.platform, row.user_login)));
   await chrome.storage.local.set({
     [TITLES_KEY]: titleUpdates,
   });
@@ -623,6 +659,7 @@ async function poll(): Promise<void> {
 
     if (favs.length === 0) {
       await syncLiveState([]);
+      await saveLiveSnapshots([]);
       await chrome.storage.local.set({
         [TITLES_KEY]: {},
         [TITLES_INIT_KEY]: true,
